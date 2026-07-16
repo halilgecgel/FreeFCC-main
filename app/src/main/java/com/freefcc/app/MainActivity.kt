@@ -888,6 +888,14 @@ private fun FccPage(state: AppState, viewModel: FccViewModel) {
                             MediaPlayer.create(context, R.raw.kimse_gormeden)?.apply {
                                 setOnCompletionListener { it.release() }
                                 start()
+                                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                    try {
+                                        if (isPlaying) {
+                                            stop()
+                                        }
+                                        release()
+                                    } catch (_: Exception) {}
+                                }, 5000)
                             }
                         } catch (_: Exception) {}
                         viewModel.connect()
