@@ -51,13 +51,53 @@ class FccSession extends Model
     protected ?array $resolvedFlightBounds = null;
 
     /**
-     * One row per logical flight: successful FCC enable / auto_fcc starts.
+     * One row per logical flight: the first successful enable/auto_fcc after
+     * the previous disable (or the member's first ever enable). Mid-flight
+     * re-applies are excluded so they only appear as events inside the flight.
      */
     public function scopeFlightStarts(Builder $query): Builder
     {
+        $starts = self::FLIGHT_START_ACTIONS;
+        $ends = self::FLIGHT_END_ACTIONS;
+
         return $query
             ->where('success', true)
-            ->whereIn('action', self::FLIGHT_START_ACTIONS);
+            ->whereIn('action', $starts)
+            ->whereNotExists(function ($sub) use ($starts, $ends) {
+                $sub->selectRaw('1')
+                    ->from('fcc_sessions as prev_start')
+                    ->whereColumn('prev_start.member_id', 'fcc_sessions.member_id')
+                    ->where('prev_start.success', true)
+                    ->whereIn('prev_start.action', $starts)
+                    ->where(function ($q) {
+                        $q->whereColumn('prev_start.created_at', '<', 'fcc_sessions.created_at')
+                            ->orWhere(function ($q) {
+                                $q->whereColumn('prev_start.created_at', 'fcc_sessions.created_at')
+                                    ->whereColumn('prev_start.id', '<', 'fcc_sessions.id');
+                            });
+                    })
+                    ->whereNotExists(function ($mid) use ($ends) {
+                        $mid->selectRaw('1')
+                            ->from('fcc_sessions as mid_end')
+                            ->whereColumn('mid_end.member_id', 'fcc_sessions.member_id')
+                            ->where('mid_end.success', true)
+                            ->whereIn('mid_end.action', $ends)
+                            ->where(function ($q) {
+                                $q->whereColumn('mid_end.created_at', '>', 'prev_start.created_at')
+                                    ->orWhere(function ($q) {
+                                        $q->whereColumn('mid_end.created_at', 'prev_start.created_at')
+                                            ->whereColumn('mid_end.id', '>', 'prev_start.id');
+                                    });
+                            })
+                            ->where(function ($q) {
+                                $q->whereColumn('mid_end.created_at', '<', 'fcc_sessions.created_at')
+                                    ->orWhere(function ($q) {
+                                        $q->whereColumn('mid_end.created_at', 'fcc_sessions.created_at')
+                                            ->whereColumn('mid_end.id', '<', 'fcc_sessions.id');
+                                    });
+                            });
+                    });
+            });
     }
 
     /**
@@ -184,13 +224,28 @@ class FccSession extends Model
         ];
     }
 
+    /**
+     * Root enable for the flight containing this event: the first successful
+     * start after the previous disable (ignores mid-flight re-applies).
+     */
     protected function findFlightStartEvent(): ?self
     {
-        if ($this->success && in_array($this->action, self::FLIGHT_START_ACTIONS, true)) {
-            return $this;
-        }
+        $lastDisable = static::query()
+            ->where('member_id', $this->member_id)
+            ->where('success', true)
+            ->whereIn('action', self::FLIGHT_END_ACTIONS)
+            ->where(function (Builder $query) {
+                $query->where('created_at', '<', $this->created_at)
+                    ->orWhere(function (Builder $query) {
+                        $query->where('created_at', $this->created_at)
+                            ->where('id', '<', $this->id);
+                    });
+            })
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->first();
 
-        return static::query()
+        $startQuery = static::query()
             ->where('member_id', $this->member_id)
             ->where('success', true)
             ->whereIn('action', self::FLIGHT_START_ACTIONS)
@@ -200,20 +255,26 @@ class FccSession extends Model
                         $query->where('created_at', $this->created_at)
                             ->where('id', '<=', $this->id);
                     });
-            })
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
+            });
+
+        if ($lastDisable !== null) {
+            $startQuery->where(function (Builder $query) use ($lastDisable) {
+                $query->where('created_at', '>', $lastDisable->created_at)
+                    ->orWhere(function (Builder $query) use ($lastDisable) {
+                        $query->where('created_at', $lastDisable->created_at)
+                            ->where('id', '>', $lastDisable->id);
+                    });
+            });
+        }
+
+        return $startQuery
+            ->orderBy('created_at')
+            ->orderBy('id')
             ->first();
     }
 
     protected function findFlightEndEvent(self $startEvent): ?self
     {
-        if ($this->success && in_array($this->action, self::FLIGHT_END_ACTIONS, true)) {
-            if (! $this->created_at->lt($startEvent->created_at)) {
-                return $this;
-            }
-        }
-
         return static::query()
             ->where('member_id', $this->member_id)
             ->where('success', true)
