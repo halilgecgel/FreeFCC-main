@@ -39,6 +39,8 @@ return [
         'url' => env('EVOLUTION_API_URL', 'http://127.0.0.1:8080'),
         'key' => env('EVOLUTION_API_KEY'),
         'instance' => env('EVOLUTION_API_INSTANCE', 'freefcc'),
+        // Flight notices: group ID is resolved live from the Evolution instance by name
+        'flight_group_name' => env('EVOLUTION_FLIGHT_GROUP_NAME', 'ŞANLIURFA DRONE PİLOTLARI'),
     ],
 
     'sms' => [

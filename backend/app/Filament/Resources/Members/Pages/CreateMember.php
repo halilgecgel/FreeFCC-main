@@ -27,7 +27,7 @@ class CreateMember extends CreateRecord
         $member = $this->record;
 
         if ($member->phone && $this->plainPassword) {
-            $message = "🛩️ *FreeFCC Hesap Bilgileriniz*\n\n"
+            $message = "🛩️ *HG FCC Hesap Bilgileriniz*\n\n"
                 . "👤 Kullanıcı Adı: `{$member->username}`\n"
                 . "🔑 Şifre: `{$this->plainPassword}`\n\n"
                 . "İyi uçuşlar! ✈️";

@@ -112,4 +112,50 @@ class AdminPanelTest extends TestCase
             ->assertSee('freefcc-test')
             ->assertSee('Bağlan / QR Kod Oluştur');
     }
+
+    public function test_dashboard_renders_with_stats_and_widgets(): void
+    {
+        $member = Member::create([
+            'username' => 'dashuser',
+            'password' => 'secret123',
+            'is_active' => true,
+        ]);
+        $member->forceFill(['is_online' => true, 'last_heartbeat_at' => now()])->save();
+
+        \App\Models\LoginLog::create([
+            'member_id' => $member->id,
+            'username' => 'dashuser',
+            'device_id' => 'device-dash',
+            'success' => true,
+            'reason' => 'ok',
+            'created_at' => now(),
+        ]);
+
+        \App\Models\FccSession::create([
+            'member_id' => $member->id,
+            'action' => 'fcc_enable',
+            'success' => true,
+        ]);
+
+        \App\Models\ErrorLog::create([
+            'member_id' => $member->id,
+            'error_type' => 'connection',
+            'message' => 'Dashboard test error',
+        ]);
+
+        $this->actingAs($this->admin())
+            ->get('/admin')
+            ->assertSuccessful()
+            ->assertSee('Panel Özeti')
+            ->assertSee('StatsOverview')
+            ->assertSee('SessionsChart')
+            ->assertSee('OnlineMembersWidget');
+
+        Livewire::test(\App\Filament\Widgets\StatsOverview::class)
+            ->assertSee('Toplam Üye')
+            ->assertSee('Çevrimiçi');
+
+        Livewire::test(\App\Filament\Widgets\OnlineMembersWidget::class)
+            ->assertSee('dashuser');
+    }
 }

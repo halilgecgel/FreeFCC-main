@@ -16,6 +16,12 @@ class FccSession extends Model
         'ce_reset_blocks',
         'aircraft_serial',
         'controller_model',
+        'device_model',
+        'latitude',
+        'longitude',
+        'province',
+        'district',
+        'neighborhood',
         'failure_reason',
     ];
 
@@ -23,6 +29,8 @@ class FccSession extends Model
     {
         return [
             'success' => 'boolean',
+            'latitude' => 'float',
+            'longitude' => 'float',
         ];
     }
 

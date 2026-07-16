@@ -3,6 +3,7 @@ package com.freefcc.app
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.location.Geocoder
 import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -23,6 +24,14 @@ object TelemetryCollector {
     private var fccStartTime: Long = 0L
     private var keepaliveCount = AtomicInteger(0)
     private var ceResetBlocks = AtomicInteger(0)
+
+    data class LocationInfo(
+        val latitude: Double?,
+        val longitude: Double?,
+        val province: String?,
+        val district: String?,
+        val neighborhood: String?
+    )
 
     fun trackFeature(feature: String, success: Boolean, metadata: Map<String, Any?>? = null) {
         pendingFeatureEvents.add(FeatureEvent(feature, success, metadata))
@@ -118,6 +127,15 @@ object TelemetryCollector {
     ) {
         val token = AuthManager.getToken(context) ?: return
         val controllerModel = try { Build.DEVICE } catch (_: Exception) { null }
+        val deviceModel = try {
+            listOfNotNull(Build.MANUFACTURER, Build.MODEL)
+                .joinToString(" ")
+                .trim()
+                .ifEmpty { null }
+        } catch (_: Exception) {
+            null
+        }
+        val location = resolveLocationInfo(context)
 
         withContext(Dispatchers.IO) {
             TelemetryApi.sendFccSession(
@@ -129,6 +147,12 @@ object TelemetryCollector {
                 ceResetBlocks = if (action == "keepalive_stop") getCeResetBlocks() else null,
                 aircraftSerial = aircraftSerial,
                 controllerModel = controllerModel,
+                deviceModel = deviceModel,
+                latitude = location.latitude,
+                longitude = location.longitude,
+                province = location.province,
+                district = location.district,
+                neighborhood = location.neighborhood,
                 failureReason = failureReason
             )
         }
@@ -207,6 +231,54 @@ object TelemetryCollector {
             }
         } catch (_: Exception) {
             "unknown"
+        }
+    }
+
+    private fun resolveLocationInfo(context: Context): LocationInfo {
+        val coords = readLastKnownLocation(context)
+        if (coords == null) {
+            return LocationInfo(null, null, null, null, null)
+        }
+
+        val address = reverseGeocode(context, coords.first, coords.second)
+        return LocationInfo(
+            latitude = coords.first,
+            longitude = coords.second,
+            province = address?.province,
+            district = address?.district,
+            neighborhood = address?.neighborhood
+        )
+    }
+
+    private data class AddressParts(
+        val province: String?,
+        val district: String?,
+        val neighborhood: String?
+    )
+
+    @Suppress("DEPRECATION")
+    private fun reverseGeocode(context: Context, lat: Double, lng: Double): AddressParts? {
+        return try {
+            if (!Geocoder.isPresent()) return null
+            val geocoder = Geocoder(context, Locale("tr", "TR"))
+            val results = geocoder.getFromLocation(lat, lng, 1)
+            val address = results?.firstOrNull() ?: return null
+
+            val province = address.adminArea?.trim()?.ifEmpty { null }
+            val district = listOfNotNull(address.subAdminArea, address.locality)
+                .map { it.trim() }
+                .firstOrNull { it.isNotEmpty() }
+            val neighborhood = listOfNotNull(
+                address.subLocality,
+                address.thoroughfare,
+                address.featureName
+            )
+                .map { it.trim() }
+                .firstOrNull { it.isNotEmpty() && it != district && it != province }
+
+            AddressParts(province, district, neighborhood)
+        } catch (_: Exception) {
+            null
         }
     }
 

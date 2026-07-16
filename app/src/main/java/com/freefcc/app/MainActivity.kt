@@ -930,6 +930,8 @@ private fun FccPage(state: AppState, viewModel: FccViewModel) {
                     }
                 }
                 else -> {
+                    var showFlightGroupDialog by remember { mutableStateOf(false) }
+
                     if (state.message.isNotEmpty()) {
                         BodyText(state.message)
                         Spacer(Modifier.height(20.dp))
@@ -937,7 +939,19 @@ private fun FccPage(state: AppState, viewModel: FccViewModel) {
                         BodyText("FCC modunu etkinleştirmek için aşağıdaki düğmeye dokunun.")
                         Spacer(Modifier.height(20.dp))
                     }
-                    GlowButton("FCC Modunu Etkinleştir", Cyan, enabled = !state.isHardwareBusy) { viewModel.enableFcc() }
+                    GlowButton("FCC Modunu Etkinleştir", Cyan, enabled = !state.isHardwareBusy) {
+                        showFlightGroupDialog = true
+                    }
+
+                    if (showFlightGroupDialog) {
+                        FlightGroupNoticeDialog(
+                            onConfirm = {
+                                showFlightGroupDialog = false
+                                viewModel.enableFcc()
+                            },
+                            onDismiss = { showFlightGroupDialog = false }
+                        )
+                    }
                 }
             }
 
@@ -1361,6 +1375,56 @@ private fun ForceUpdateScreen(state: AppState, viewModel: FccViewModel) {
 // ═══════════════════════════════════════════════════════════════════════
 // Optional Update Dialog
 // ═══════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun FlightGroupNoticeDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CardBg,
+        titleContentColor = TextWhite,
+        textContentColor = TextGray,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Groups, null, tint = Amber, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("Uçuş Bildirimi", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+        },
+        text = {
+            Column {
+                Text(
+                    "ŞANLIURFA DRONE PİLOTLARI grubuna uçuş bilgisi gönderilecektir.",
+                    color = TextWhite,
+                    fontSize = 14.sp,
+                    lineHeight = 21.sp
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Cihaz modeli ve konum (il / ilçe / mahalle) bilgisi gruba iletilecektir. Uçuş bitince tamamlanma mesajı da gönderilir.",
+                    color = TextGray,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = Cyan, contentColor = BgDark)
+            ) {
+                Text("Tamam", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Vazgeç", color = TextGray)
+            }
+        }
+    )
+}
 
 @Composable
 private fun OptionalUpdateDialog(

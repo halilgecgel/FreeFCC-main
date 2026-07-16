@@ -242,19 +242,67 @@ class EvolutionApiService
         return null;
     }
 
-    public function sendText(string $phone, string $text): array
+    /**
+     * Send a text message to a phone number or WhatsApp JID (including groups).
+     *
+     * Group JIDs look like `120363...@g.us` and are passed through unchanged.
+     */
+    public function sendText(string $phoneOrJid, string $text): array
     {
         $instance = $this->instanceName();
-        $phone = $this->normalizeWhatsappNumber($phone);
+        $number = $this->normalizeRecipient($phoneOrJid);
 
         $response = $this->send(fn (PendingRequest $client) => $client->post("/message/sendText/{$instance}", [
-            'number' => $phone,
+            'number' => $number,
             'text' => $text,
         ]));
 
         $this->throwOnFailure($response);
 
         return $response->json() ?? [];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function fetchAllGroups(?string $instance = null): array
+    {
+        $instance = $instance ?: $this->instanceName();
+
+        $response = $this->send(fn (PendingRequest $client) => $client->get(
+            "/group/fetchAllGroups/{$instance}",
+            ['getParticipants' => 'false']
+        ));
+
+        $this->throwOnFailure($response);
+
+        $json = $response->json();
+
+        if (is_array($json) && array_is_list($json)) {
+            return $json;
+        }
+
+        if (is_array($json) && isset($json['groups']) && is_array($json['groups'])) {
+            return $json['groups'];
+        }
+
+        return is_array($json) ? array_values($json) : [];
+    }
+
+    protected function normalizeRecipient(string $phoneOrJid): string
+    {
+        $value = trim($phoneOrJid);
+
+        if ($value === '') {
+            throw new \RuntimeException('Geçersiz WhatsApp alıcısı.');
+        }
+
+        // Group or user JID — keep as-is (Evolution accepts full JIDs).
+        if (str_contains($value, '@')) {
+            return $value;
+        }
+
+        return $this->normalizeWhatsappNumber($value);
     }
 
     protected function normalizeWhatsappNumber(string $phone): string

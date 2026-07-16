@@ -9,6 +9,7 @@ use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use UnitEnum;
 
 class FeatureUsageLogResource extends Resource
 {
@@ -22,7 +23,7 @@ class FeatureUsageLogResource extends Resource
 
     protected static ?string $navigationLabel = 'Özellik Kullanımı';
 
-    protected static ?string $navigationGroup = 'Telemetri';
+    protected static string|UnitEnum|null $navigationGroup = 'Telemetri';
 
     public static function table(Table $table): Table
     {

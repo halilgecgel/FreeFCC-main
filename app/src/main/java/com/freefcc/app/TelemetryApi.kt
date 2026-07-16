@@ -76,6 +76,12 @@ object TelemetryApi {
         ceResetBlocks: Int? = null,
         aircraftSerial: String? = null,
         controllerModel: String? = null,
+        deviceModel: String? = null,
+        latitude: Double? = null,
+        longitude: Double? = null,
+        province: String? = null,
+        district: String? = null,
+        neighborhood: String? = null,
         failureReason: String? = null
     ): Boolean {
         val body = JSONObject().apply {
@@ -86,6 +92,12 @@ object TelemetryApi {
             put("ce_reset_blocks", ceResetBlocks ?: JSONObject.NULL)
             put("aircraft_serial", aircraftSerial ?: JSONObject.NULL)
             put("controller_model", controllerModel ?: JSONObject.NULL)
+            put("device_model", deviceModel ?: JSONObject.NULL)
+            put("latitude", latitude ?: JSONObject.NULL)
+            put("longitude", longitude ?: JSONObject.NULL)
+            put("province", province ?: JSONObject.NULL)
+            put("district", district ?: JSONObject.NULL)
+            put("neighborhood", neighborhood ?: JSONObject.NULL)
             put("failure_reason", failureReason ?: JSONObject.NULL)
         }
         return post("/telemetry/fcc-session", body, token)

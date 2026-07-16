@@ -8,6 +8,7 @@ use App\Models\DeviceTelemetry;
 use App\Models\ErrorLog;
 use App\Models\FccSession;
 use App\Models\FeatureUsageLog;
+use App\Services\FlightGroupNotificationService;
 use Illuminate\Http\Request;
 
 class TelemetryController extends Controller
@@ -41,7 +42,7 @@ class TelemetryController extends Controller
         return response()->json(['status' => 'ok']);
     }
 
-    public function fccSession(Request $request)
+    public function fccSession(Request $request, FlightGroupNotificationService $flightNotifier)
     {
         $data = $request->validate([
             'action' => ['required', 'string', 'in:fcc_enable,fcc_disable,keepalive_start,keepalive_stop,auto_fcc'],
@@ -51,12 +52,33 @@ class TelemetryController extends Controller
             'ce_reset_blocks' => ['nullable', 'integer'],
             'aircraft_serial' => ['nullable', 'string', 'max:50'],
             'controller_model' => ['nullable', 'string', 'max:100'],
+            'device_model' => ['nullable', 'string', 'max:100'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'province' => ['nullable', 'string', 'max:100'],
+            'district' => ['nullable', 'string', 'max:100'],
+            'neighborhood' => ['nullable', 'string', 'max:150'],
             'failure_reason' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        FccSession::create(array_merge($data, [
+        $session = FccSession::create(array_merge($data, [
             'member_id' => $request->user()->id,
         ]));
+
+        $location = [
+            'device_model' => $data['device_model'] ?? null,
+            'latitude' => isset($data['latitude']) ? (float) $data['latitude'] : null,
+            'longitude' => isset($data['longitude']) ? (float) $data['longitude'] : null,
+            'province' => $data['province'] ?? null,
+            'district' => $data['district'] ?? null,
+            'neighborhood' => $data['neighborhood'] ?? null,
+        ];
+
+        $member = $request->user();
+
+        dispatch(function () use ($flightNotifier, $member, $session, $location) {
+            $flightNotifier->notifySession($member, $session, $location);
+        })->afterResponse();
 
         return response()->json(['status' => 'ok']);
     }
