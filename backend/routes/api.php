@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\DeviceModelController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\TelemetryController;
 use App\Http\Controllers\Api\UpdateController;
@@ -19,6 +20,9 @@ Route::prefix('v1')->group(function () {
         Route::post('/offline', [AuthController::class, 'offline']);
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/notifications', [NotificationController::class, 'index']);
+
+        Route::get('/device-models', [DeviceModelController::class, 'index']);
+        Route::post('/me/device-model', [DeviceModelController::class, 'select']);
 
         Route::prefix('/telemetry')->group(function () {
             Route::post('/device', [TelemetryController::class, 'deviceTelemetry']);

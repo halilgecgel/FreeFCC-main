@@ -114,6 +114,10 @@ class MemberInfolist
                             ->label('Kayıt Tarihi')
                             ->dateTime('d.m.Y H:i')
                             ->placeholder('—'),
+                        TextEntry::make('deviceModel.name')
+                            ->label('Cihaz Modeli')
+                            ->placeholder('Henüz seçilmedi')
+                            ->icon('heroicon-m-cpu-chip'),
                     ]),
 
                 Section::make('Tarihler')

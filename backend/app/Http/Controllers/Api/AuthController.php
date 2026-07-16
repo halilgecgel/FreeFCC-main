@@ -175,10 +175,19 @@ class AuthController extends Controller
 
     private function memberPayload(Member $member): array
     {
+        $member->loadMissing('deviceModel');
+
+        $deviceModel = $member->deviceModel;
+
         return [
             'username' => $member->username,
             'name' => $member->name,
             'expires_at' => $member->expires_at?->toIso8601String(),
+            'device_model' => $deviceModel ? [
+                'id' => $deviceModel->id,
+                'name' => $deviceModel->name,
+                'slug' => $deviceModel->slug,
+            ] : null,
         ];
     }
 

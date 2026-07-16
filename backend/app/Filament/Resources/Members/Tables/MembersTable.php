@@ -55,6 +55,12 @@ class MembersTable
                     ->label('Cihaz Kayıtlı')
                     ->boolean()
                     ->getStateUsing(fn ($record) => filled($record->device_id)),
+                TextColumn::make('deviceModel.name')
+                    ->label('Cihaz Modeli')
+                    ->placeholder('Seçilmedi')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
                 TextColumn::make('expires_at')
                     ->label('Bitiş Tarihi')
                     ->dateTime('d.m.Y H:i')
@@ -123,6 +129,22 @@ class MembersTable
 
                             Notification::make()
                                 ->title('Cihaz kaydı sıfırlandı')
+                                ->success()
+                                ->send();
+                        }),
+                    Action::make('resetDeviceModel')
+                        ->label('Modeli Sıfırla')
+                        ->icon('heroicon-o-cpu-chip')
+                        ->color('warning')
+                        ->visible(fn ($record) => filled($record->device_model_id))
+                        ->requiresConfirmation()
+                        ->modalHeading('Cihaz Modeli Sıfırlama')
+                        ->modalDescription('Üyenin seçili cihaz modeli kaldırılacak. Bir sonraki girişte yeniden model seçmesi istenecek.')
+                        ->action(function ($record) {
+                            $record->resetDeviceModel();
+
+                            Notification::make()
+                                ->title('Cihaz modeli sıfırlandı')
                                 ->success()
                                 ->send();
                         }),

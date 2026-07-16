@@ -391,8 +391,13 @@ private fun hasInternetConnection(context: Context): Boolean {
 private sealed class AuthUiState {
     data object Checking : AuthUiState()
     data class LoggedOut(val error: String? = null) : AuthUiState()
+    data class NeedsDeviceModel(val member: MemberInfo) : AuthUiState()
     data class LoggedIn(val member: MemberInfo) : AuthUiState()
 }
+
+private fun authStateForMember(member: MemberInfo): AuthUiState =
+    if (member.deviceModel == null) AuthUiState.NeedsDeviceModel(member)
+    else AuthUiState.LoggedIn(member)
 
 @Composable
 private fun AuthCheckingScreen() {
@@ -545,6 +550,143 @@ private fun loginFieldColors() = OutlinedTextFieldDefaults.colors(
 )
 
 @Composable
+private fun DeviceModelSelectionScreen(
+    isLoadingList: Boolean,
+    isSubmitting: Boolean,
+    models: List<DeviceModelInfo>,
+    errorMessage: String?,
+    onSelect: (DeviceModelInfo) -> Unit,
+    onRetry: () -> Unit
+) {
+    var selectedId by remember { mutableStateOf<Long?>(null) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(listOf(Color(0xFF050A1A), BgDark, BgMid, BgDark))
+            )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 28.dp)
+                .imePadding(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(modifier.height(72.dp))
+            Image(
+                painter = painterResource(R.drawable.hg_logo),
+                contentDescription = null,
+                modifier = Modifier.size(64.dp)
+            )
+            Spacer(modifier.height(20.dp))
+            Text("Cihaz Modeli", color = TextWhite, fontSize = 26.sp, fontWeight = FontWeight.Black)
+            Spacer(modifier.height(6.dp))
+            BodyText("Devam etmek için cihaz modelinizi seçin.", TextGray)
+            Spacer(modifier.height(28.dp))
+
+            when {
+                isLoadingList -> {
+                    CircularProgressIndicator(strokeWidth = 2.5.dp, color = Cyan, modifier = Modifier.size(32.dp))
+                    Spacer(modifier.height(12.dp))
+                    BodyText("Modeller yükleniyor...", TextGray)
+                }
+                models.isEmpty() -> {
+                    Surface(
+                        color = Amber.copy(0.12f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Amber.copy(0.3f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text(
+                                "Henüz tanımlı cihaz modeli yok. Yöneticiniz modelleri ekledikten sonra tekrar deneyin.",
+                                color = Amber,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp
+                            )
+                            Spacer(modifier.height(12.dp))
+                            GlowButton("Tekrar Dene", Amber, enabled = !isSubmitting, onClick = onRetry)
+                        }
+                    }
+                }
+                else -> {
+                    models.forEach { model ->
+                        val selected = selectedId == model.id
+                        Surface(
+                            onClick = { if (!isSubmitting) selectedId = model.id },
+                            color = if (selected) Cyan.copy(0.12f) else CardBg,
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, if (selected) Cyan.copy(0.55f) else CardBorder),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(model.name, color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                    if (!model.description.isNullOrBlank()) {
+                                        Spacer(modifier.height(4.dp))
+                                        Text(model.description, color = TextGray, fontSize = 12.sp, lineHeight = 16.sp)
+                                    }
+                                }
+                                if (selected) {
+                                    Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Cyan)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            AnimatedVisibility(visible = errorMessage != null) {
+                Column {
+                    Spacer(modifier.height(8.dp))
+                    Surface(
+                        color = Red.copy(0.12f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Red.copy(0.3f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            errorMessage ?: "",
+                            color = Red,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier.height(24.dp))
+
+            if (isSubmitting) {
+                CircularProgressIndicator(strokeWidth = 2.5.dp, color = Cyan, modifier = Modifier.size(32.dp))
+            } else if (models.isNotEmpty()) {
+                GlowButton(
+                    "Devam Et",
+                    Cyan,
+                    enabled = selectedId != null
+                ) {
+                    val model = models.firstOrNull { it.id == selectedId } ?: return@GlowButton
+                    onSelect(model)
+                }
+            }
+
+            Spacer(modifier.height(16.dp))
+            BodyText("Seçiminiz hesabınıza kaydedilir ve sonra değiştirilemez.", TextDim)
+            Spacer(modifier.height(40.dp))
+        }
+    }
+}
+
+@Composable
 private fun AppRoot(viewModel: FccViewModel) {
     var showSplash by remember { mutableStateOf(true) }
 
@@ -606,6 +748,29 @@ private fun AppRoot(viewModel: FccViewModel) {
     val authScope = rememberCoroutineScope()
     var authState by remember { mutableStateOf<AuthUiState>(AuthUiState.Checking) }
     var isLoggingIn by remember { mutableStateOf(false) }
+    var deviceModels by remember { mutableStateOf<List<DeviceModelInfo>>(emptyList()) }
+    var isLoadingModels by remember { mutableStateOf(false) }
+    var isSelectingModel by remember { mutableStateOf(false) }
+    var modelSelectionError by remember { mutableStateOf<String?>(null) }
+
+    fun loadDeviceModels() {
+        val token = AuthManager.getToken(context) ?: return
+        isLoadingModels = true
+        modelSelectionError = null
+        authScope.launch {
+            when (val result = withContext(Dispatchers.IO) { AuthApi.listDeviceModels(token) }) {
+                is AuthResult.Success -> {
+                    deviceModels = result.data
+                    isLoadingModels = false
+                }
+                is AuthResult.Failure -> {
+                    deviceModels = emptyList()
+                    isLoadingModels = false
+                    modelSelectionError = result.error.message
+                }
+            }
+        }
+    }
 
     // Runs once per (re)connect: if we have a saved token, ask the server
     // whether it's still valid (account may have been deactivated, expired,
@@ -617,7 +782,10 @@ private fun AppRoot(viewModel: FccViewModel) {
             return@LaunchedEffect
         }
         when (val result = withContext(Dispatchers.IO) { AuthApi.me(token) }) {
-            is AuthResult.Success -> authState = AuthUiState.LoggedIn(result.data)
+            is AuthResult.Success -> {
+                AuthManager.saveMemberProfile(context, result.data)
+                authState = authStateForMember(result.data)
+            }
             is AuthResult.Failure -> {
                 AuthManager.clearSession(context)
                 authState = AuthUiState.LoggedOut()
@@ -625,26 +793,37 @@ private fun AppRoot(viewModel: FccViewModel) {
         }
     }
 
+    LaunchedEffect(authState) {
+        if (authState is AuthUiState.NeedsDeviceModel) {
+            loadDeviceModels()
+        }
+    }
+
     // While logged in, periodically re-check with the server so a remote
     // deactivation/expiry/device-reset kicks the user out without needing
     // to force-close and reopen the app.
     LaunchedEffect(authState) {
-        if (authState !is AuthUiState.LoggedIn) return@LaunchedEffect
+        if (authState !is AuthUiState.LoggedIn && authState !is AuthUiState.NeedsDeviceModel) return@LaunchedEffect
         while (true) {
             delay(5 * 60 * 1000L)
             val token = AuthManager.getToken(context) ?: break
-            val result = withContext(Dispatchers.IO) { AuthApi.me(token) }
-            if (result is AuthResult.Failure) {
-                AuthManager.clearSession(context)
-                authState = AuthUiState.LoggedOut(result.error.message)
-                break
+            when (val result = withContext(Dispatchers.IO) { AuthApi.me(token) }) {
+                is AuthResult.Success -> {
+                    AuthManager.saveMemberProfile(context, result.data)
+                    authState = authStateForMember(result.data)
+                }
+                is AuthResult.Failure -> {
+                    AuthManager.clearSession(context)
+                    authState = AuthUiState.LoggedOut(result.error.message)
+                    break
+                }
             }
         }
     }
 
     // Heartbeat: her 60 saniyede sunucuya sinyal gönder (online takibi)
     LaunchedEffect(authState) {
-        if (authState !is AuthUiState.LoggedIn) return@LaunchedEffect
+        if (authState !is AuthUiState.LoggedIn && authState !is AuthUiState.NeedsDeviceModel) return@LaunchedEffect
         while (true) {
             val token = AuthManager.getToken(context) ?: break
             withContext(Dispatchers.IO) { AuthApi.heartbeat(token) }
@@ -656,6 +835,8 @@ private fun AppRoot(viewModel: FccViewModel) {
         val token = AuthManager.getToken(context)
         // Stop heartbeat/me loops immediately, then revoke server session before clearing local token.
         authState = AuthUiState.LoggedOut()
+        deviceModels = emptyList()
+        modelSelectionError = null
         if (token != null) {
             authScope.launch(Dispatchers.IO) {
                 AuthApi.logout(token)
@@ -688,9 +869,48 @@ private fun AppRoot(viewModel: FccViewModel) {
                         when (result) {
                             is AuthResult.Success -> {
                                 AuthManager.saveSession(context, result.data.token, result.data.member)
-                                authState = AuthUiState.LoggedIn(result.data.member)
+                                authState = authStateForMember(result.data.member)
                             }
                             is AuthResult.Failure -> authState = AuthUiState.LoggedOut(result.error.message)
+                        }
+                    }
+                }
+            )
+            return
+        }
+        is AuthUiState.NeedsDeviceModel -> {
+            DeviceModelSelectionScreen(
+                isLoadingList = isLoadingModels,
+                isSubmitting = isSelectingModel,
+                models = deviceModels,
+                errorMessage = modelSelectionError,
+                onRetry = { loadDeviceModels() },
+                onSelect = { model ->
+                    val token = AuthManager.getToken(context) ?: return@DeviceModelSelectionScreen
+                    isSelectingModel = true
+                    modelSelectionError = null
+                    authScope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            AuthApi.selectDeviceModel(token, model.id)
+                        }
+                        isSelectingModel = false
+                        when (result) {
+                            is AuthResult.Success -> {
+                                AuthManager.saveMemberProfile(context, result.data)
+                                authState = AuthUiState.LoggedIn(result.data)
+                            }
+                            is AuthResult.Failure -> {
+                                modelSelectionError = result.error.message
+                                if (result.error.code == AuthErrorCode.ALREADY_SELECTED) {
+                                    when (val me = withContext(Dispatchers.IO) { AuthApi.me(token) }) {
+                                        is AuthResult.Success -> {
+                                            AuthManager.saveMemberProfile(context, me.data)
+                                            authState = authStateForMember(me.data)
+                                        }
+                                        is AuthResult.Failure -> Unit
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1874,6 +2094,10 @@ private fun SupportPage(member: MemberInfo, onLogout: () -> Unit) {
             Text("Hesabım", color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(12.dp))
             InfoRow("Kullanıcı Adı", member.name?.ifBlank { null } ?: member.username)
+            if (member.deviceModel != null) {
+                Spacer(modifier.height(12.dp))
+                InfoRow("Cihaz Modeli", member.deviceModel.name)
+            }
             if (member.expiresAt != null) {
                 Spacer(Modifier.height(12.dp))
                 InfoRow("Üyelik Bitişi", member.expiresAt.take(10))

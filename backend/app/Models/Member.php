@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Laravel\Sanctum\HasApiTokens;
 
@@ -32,6 +33,7 @@ class Member extends Model
         'expires_at',
         'device_id',
         'device_registered_at',
+        'device_model_id',
         'last_login_at',
         'last_login_ip',
         'app_version',
@@ -56,6 +58,11 @@ class Member extends Model
             'last_heartbeat_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    public function deviceModel(): BelongsTo
+    {
+        return $this->belongsTo(DeviceModel::class);
     }
 
     public function loginLogs(): HasMany
@@ -186,6 +193,14 @@ class Member extends Model
         ])->save();
 
         $this->tokens()->delete();
+    }
+
+    /** Clears the selected device model so the member can pick again on next launch. */
+    public function resetDeviceModel(): void
+    {
+        $this->forceFill([
+            'device_model_id' => null,
+        ])->save();
     }
 
     protected function statusLabel(): Attribute

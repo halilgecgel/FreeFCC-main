@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Members\Schemas;
 
 use Filament\Actions\Action;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
@@ -73,6 +74,24 @@ class MemberForm
                             ->disabled()
                             ->dehydrated(false)
                             ->native(false),
+                    ]),
+
+                Section::make('Cihaz Modeli')
+                    ->columns(2)
+                    ->description('Üye uygulamada model seçer. Boş bırakırsanız bir sonraki girişte tekrar seçmesi istenir.')
+                    ->components([
+                        Select::make('device_model_id')
+                            ->label('Seçili Model')
+                            ->relationship(
+                                name: 'deviceModel',
+                                titleAttribute: 'name',
+                                modifyQueryUsing: fn ($query) => $query->ordered(),
+                            )
+                            ->searchable()
+                            ->preload()
+                            ->nullable()
+                            ->placeholder('Henüz seçilmedi')
+                            ->helperText('Sadece aktif modeller uygulamada listelenir.'),
                     ]),
 
                 Section::make('Diğer')

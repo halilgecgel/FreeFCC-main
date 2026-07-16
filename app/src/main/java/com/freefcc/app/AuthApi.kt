@@ -10,10 +10,18 @@ import java.net.URL
  * HttpURLConnection + org.json, no extra networking dependency.
  */
 
+data class DeviceModelInfo(
+    val id: Long,
+    val name: String,
+    val slug: String,
+    val description: String? = null
+)
+
 data class MemberInfo(
     val username: String,
     val name: String?,
-    val expiresAt: String?
+    val expiresAt: String?,
+    val deviceModel: DeviceModelInfo? = null
 )
 
 data class LoginData(
@@ -27,6 +35,8 @@ object AuthErrorCode {
     const val INACTIVE = "inactive"
     const val EXPIRED = "expired"
     const val DEVICE_MISMATCH = "device_mismatch"
+    const val ALREADY_SELECTED = "already_selected"
+    const val INVALID_MODEL = "invalid_model"
     const val NETWORK = "network_error"
     const val UNKNOWN = "unknown_error"
 }
@@ -68,11 +78,7 @@ object AuthApi {
             return AuthResult.Success(
                 LoginData(
                     token = data.optString("token"),
-                    member = MemberInfo(
-                        username = member.optString("username"),
-                        name = member.optString("name", "").ifEmpty { null },
-                        expiresAt = member.optString("expires_at", "").ifEmpty { null }
-                    )
+                    member = parseMember(member)
                 )
             )
         }
@@ -88,13 +94,50 @@ object AuthApi {
         if (code == 200 && json != null) {
             val data = json.optJSONObject("data") ?: return unknownError()
             val member = data.optJSONObject("member") ?: return unknownError()
-            return AuthResult.Success(
-                MemberInfo(
-                    username = member.optString("username"),
-                    name = member.optString("name", "").ifEmpty { null },
-                    expiresAt = member.optString("expires_at", "").ifEmpty { null }
-                )
-            )
+            return AuthResult.Success(parseMember(member))
+        }
+
+        return AuthResult.Failure(parseError(json))
+    }
+
+    fun listDeviceModels(token: String): AuthResult<List<DeviceModelInfo>> {
+        val (code, json) = request("GET", "/device-models", body = null, token = token)
+            ?: return networkError()
+
+        if (code == 200 && json != null) {
+            val data = json.optJSONObject("data") ?: return unknownError()
+            val arr = data.optJSONArray("device_models") ?: return unknownError()
+            val models = buildList {
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    add(
+                        DeviceModelInfo(
+                            id = obj.optLong("id"),
+                            name = obj.optString("name"),
+                            slug = obj.optString("slug"),
+                            description = obj.optString("description", "").ifEmpty { null }
+                        )
+                    )
+                }
+            }
+            return AuthResult.Success(models)
+        }
+
+        return AuthResult.Failure(parseError(json))
+    }
+
+    fun selectDeviceModel(token: String, deviceModelId: Long): AuthResult<MemberInfo> {
+        val body = JSONObject().apply {
+            put("device_model_id", deviceModelId)
+        }
+
+        val (code, json) = request("POST", "/me/device-model", body, token = token)
+            ?: return networkError()
+
+        if (code == 200 && json != null) {
+            val data = json.optJSONObject("data") ?: return unknownError()
+            val member = data.optJSONObject("member") ?: return unknownError()
+            return AuthResult.Success(parseMember(member))
         }
 
         return AuthResult.Failure(parseError(json))
@@ -125,6 +168,27 @@ object AuthApi {
             request("POST", "/logout", body = null, token = token)
         } catch (_: Exception) {
         }
+    }
+
+    private fun parseMember(member: JSONObject): MemberInfo {
+        val modelObj = member.optJSONObject("device_model")
+        val deviceModel = if (modelObj != null && modelObj.optLong("id") > 0) {
+            DeviceModelInfo(
+                id = modelObj.optLong("id"),
+                name = modelObj.optString("name"),
+                slug = modelObj.optString("slug"),
+                description = modelObj.optString("description", "").ifEmpty { null }
+            )
+        } else {
+            null
+        }
+
+        return MemberInfo(
+            username = member.optString("username"),
+            name = member.optString("name", "").ifEmpty { null },
+            expiresAt = member.optString("expires_at", "").ifEmpty { null },
+            deviceModel = deviceModel
+        )
     }
 
     private fun unknownError() = AuthResult.Failure(

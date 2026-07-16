@@ -19,6 +19,9 @@ object AuthManager {
     private const val KEY_USERNAME = "username"
     private const val KEY_NAME = "name"
     private const val KEY_EXPIRES_AT = "expires_at"
+    private const val KEY_DEVICE_MODEL_ID = "device_model_id"
+    private const val KEY_DEVICE_MODEL_NAME = "device_model_name"
+    private const val KEY_DEVICE_MODEL_SLUG = "device_model_slug"
 
     @Volatile
     private var cachedPrefs: SharedPreferences? = null
@@ -53,15 +56,47 @@ object AuthManager {
             .putString(KEY_NAME, member.name)
             .putString(KEY_EXPIRES_AT, member.expiresAt)
             .apply()
+        saveMemberProfile(context, member)
+    }
+
+    fun saveMemberProfile(context: Context, member: MemberInfo) {
+        val editor = prefs(context).edit()
+            .putString(KEY_USERNAME, member.username)
+            .putString(KEY_NAME, member.name)
+            .putString(KEY_EXPIRES_AT, member.expiresAt)
+
+        val model = member.deviceModel
+        if (model != null) {
+            editor
+                .putLong(KEY_DEVICE_MODEL_ID, model.id)
+                .putString(KEY_DEVICE_MODEL_NAME, model.name)
+                .putString(KEY_DEVICE_MODEL_SLUG, model.slug)
+        } else {
+            editor
+                .remove(KEY_DEVICE_MODEL_ID)
+                .remove(KEY_DEVICE_MODEL_NAME)
+                .remove(KEY_DEVICE_MODEL_SLUG)
+        }
+
+        editor.apply()
     }
 
     fun getCachedMember(context: Context): MemberInfo? {
         val p = prefs(context)
         val username = p.getString(KEY_USERNAME, null) ?: return null
+        val modelId = p.getLong(KEY_DEVICE_MODEL_ID, -1L)
+        val modelName = p.getString(KEY_DEVICE_MODEL_NAME, null)
+        val modelSlug = p.getString(KEY_DEVICE_MODEL_SLUG, null)
+        val deviceModel = if (modelId > 0 && !modelName.isNullOrBlank() && !modelSlug.isNullOrBlank()) {
+            DeviceModelInfo(id = modelId, name = modelName, slug = modelSlug)
+        } else {
+            null
+        }
         return MemberInfo(
             username = username,
             name = p.getString(KEY_NAME, null),
-            expiresAt = p.getString(KEY_EXPIRES_AT, null)
+            expiresAt = p.getString(KEY_EXPIRES_AT, null),
+            deviceModel = deviceModel
         )
     }
 
