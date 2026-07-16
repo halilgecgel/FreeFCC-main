@@ -49,15 +49,32 @@ class AppReleaseForm
                             ->required()
                             ->disk('public')
                             ->directory('releases')
+                            // Windows/Chrome often reports .apk as zip/octet-stream, not the Android MIME.
                             ->acceptedFileTypes([
                                 'application/vnd.android.package-archive',
                                 'application/octet-stream',
-                                'application/x-authorware-bin',
                                 'application/java-archive',
+                                'application/zip',
+                                'application/x-zip-compressed',
+                                'application/x-android-package-archive',
+                                'application/x-authorware-bin',
+                            ])
+                            ->rules([
+                                fn (): \Closure => function (string $attribute, mixed $value, \Closure $fail): void {
+                                    $name = is_string($value)
+                                        ? $value
+                                        : (method_exists($value, 'getClientOriginalName')
+                                            ? (string) $value->getClientOriginalName()
+                                            : '');
+
+                                    if ($name !== '' && ! str_ends_with(strtolower($name), '.apk')) {
+                                        $fail('Yalnızca .apk uzantılı dosya yükleyebilirsiniz.');
+                                    }
+                                },
                             ])
                             ->maxSize(204800) // 200 MB, KB cinsinden
                             ->visibility('public')
-                            ->helperText('Maksimum 200 MB. Yüklenen APK herkese açık depolama alanında saklanır.'),
+                            ->helperText('Maksimum 200 MB. Yalnızca .apk dosyası yükleyin.'),
                         TextInput::make('sha256')
                             ->label('SHA-256 Hash')
                             ->placeholder('İsteğe bağlı — APK bütünlük doğrulaması için')
