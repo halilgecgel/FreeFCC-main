@@ -141,14 +141,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        val token = AuthManager.getToken(this)
+        // Do NOT mark offline here — app may still be running in background
+        // (DJI Fly + FCC keepalive). OnlinePresence keeps heartbeats alive.
         Thread {
             try {
                 kotlinx.coroutines.runBlocking {
                     TelemetryCollector.flushPendingTelemetry(this@MainActivity)
                 }
             } catch (_: Exception) {}
-            if (token != null) AuthApi.goOffline(token)
         }.start()
     }
 
@@ -575,22 +575,22 @@ private fun DeviceModelSelectionScreen(
                 .imePadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier.height(72.dp))
+            Spacer(Modifier.height(72.dp))
             Image(
                 painter = painterResource(R.drawable.hg_logo),
                 contentDescription = null,
                 modifier = Modifier.size(64.dp)
             )
-            Spacer(modifier.height(20.dp))
+            Spacer(Modifier.height(20.dp))
             Text("Cihaz Modeli", color = TextWhite, fontSize = 26.sp, fontWeight = FontWeight.Black)
-            Spacer(modifier.height(6.dp))
+            Spacer(Modifier.height(6.dp))
             BodyText("Devam etmek için cihaz modelinizi seçin.", TextGray)
-            Spacer(modifier.height(28.dp))
+            Spacer(Modifier.height(28.dp))
 
             when {
                 isLoadingList -> {
                     CircularProgressIndicator(strokeWidth = 2.5.dp, color = Cyan, modifier = Modifier.size(32.dp))
-                    Spacer(modifier.height(12.dp))
+                    Spacer(Modifier.height(12.dp))
                     BodyText("Modeller yükleniyor...", TextGray)
                 }
                 models.isEmpty() -> {
@@ -607,7 +607,7 @@ private fun DeviceModelSelectionScreen(
                                 fontSize = 13.sp,
                                 lineHeight = 18.sp
                             )
-                            Spacer(modifier.height(12.dp))
+                            Spacer(Modifier.height(12.dp))
                             GlowButton("Tekrar Dene", Amber, enabled = !isSubmitting, onClick = onRetry)
                         }
                     }
@@ -631,7 +631,7 @@ private fun DeviceModelSelectionScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(model.name, color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                                     if (!model.description.isNullOrBlank()) {
-                                        Spacer(modifier.height(4.dp))
+                                        Spacer(Modifier.height(4.dp))
                                         Text(model.description, color = TextGray, fontSize = 12.sp, lineHeight = 16.sp)
                                     }
                                 }
@@ -646,7 +646,7 @@ private fun DeviceModelSelectionScreen(
 
             AnimatedVisibility(visible = errorMessage != null) {
                 Column {
-                    Spacer(modifier.height(8.dp))
+                    Spacer(Modifier.height(8.dp))
                     Surface(
                         color = Red.copy(0.12f),
                         shape = RoundedCornerShape(10.dp),
@@ -664,7 +664,7 @@ private fun DeviceModelSelectionScreen(
                 }
             }
 
-            Spacer(modifier.height(24.dp))
+            Spacer(Modifier.height(24.dp))
 
             if (isSubmitting) {
                 CircularProgressIndicator(strokeWidth = 2.5.dp, color = Cyan, modifier = Modifier.size(32.dp))
@@ -679,9 +679,9 @@ private fun DeviceModelSelectionScreen(
                 }
             }
 
-            Spacer(modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
             BodyText("Seçiminiz hesabınıza kaydedilir ve sonra değiştirilemez.", TextDim)
-            Spacer(modifier.height(40.dp))
+            Spacer(Modifier.height(40.dp))
         }
     }
 }
@@ -821,18 +821,17 @@ private fun AppRoot(viewModel: FccViewModel) {
         }
     }
 
-    // Heartbeat: her 60 saniyede sunucuya sinyal gönder (online takibi)
+    // Process-scoped heartbeat — Activity arka plana gitse bile online kalır.
     LaunchedEffect(authState) {
-        if (authState !is AuthUiState.LoggedIn && authState !is AuthUiState.NeedsDeviceModel) return@LaunchedEffect
-        while (true) {
-            val token = AuthManager.getToken(context) ?: break
-            withContext(Dispatchers.IO) { AuthApi.heartbeat(token) }
-            delay(60_000L)
+        when (authState) {
+            is AuthUiState.LoggedIn, is AuthUiState.NeedsDeviceModel -> OnlinePresence.start(context)
+            else -> OnlinePresence.stop()
         }
     }
 
     val onLogout: () -> Unit = {
         val token = AuthManager.getToken(context)
+        OnlinePresence.stop()
         // Stop heartbeat/me loops immediately, then revoke server session before clearing local token.
         authState = AuthUiState.LoggedOut()
         deviceModels = emptyList()
@@ -923,7 +922,7 @@ private fun AppRoot(viewModel: FccViewModel) {
     val loggedInMember = (authState as AuthUiState.LoggedIn).member
 
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val pagerState = rememberPagerState(initialPage = 0) { 5 }
+    val pagerState = rememberPagerState(initialPage = 0) { 6 }
     val scope = rememberCoroutineScope()
 
     val entrance = remember { Animatable(0f) }
@@ -931,7 +930,7 @@ private fun AppRoot(viewModel: FccViewModel) {
         entrance.animateTo(1f, tween(700, easing = EaseOutCubic))
     }
 
-    val tabNames = listOf("fcc", "info", "log", "update", "support")
+    val tabNames = listOf("fcc", "info", "log", "update", "support", "profile")
     LaunchedEffect(pagerState.currentPage) {
         TelemetryCollector.trackTab(tabNames.getOrElse(pagerState.currentPage) { "unknown" })
     }
@@ -1012,7 +1011,8 @@ private fun AppRoot(viewModel: FccViewModel) {
                 1 -> InfoPage(state, viewModel)
                 2 -> LogPage(state)
                 3 -> UpdatePage(state, viewModel)
-                4 -> SupportPage(member = loggedInMember, onLogout = onLogout)
+                4 -> SupportPage()
+                5 -> ProfilePage(member = loggedInMember, onLogout = onLogout)
             }
         }
 
@@ -1979,7 +1979,7 @@ private fun UpdatePage(state: AppState, viewModel: FccViewModel) {
 // ═══════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun SupportPage(member: MemberInfo, onLogout: () -> Unit) {
+private fun SupportPage() {
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val textAlpha = remember { Animatable(0f) }
@@ -2089,25 +2089,6 @@ private fun SupportPage(member: MemberInfo, onLogout: () -> Unit) {
             }
         }
 
-        Spacer(Modifier.height(16.dp))
-        GlowCard {
-            Text("Hesabım", color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(12.dp))
-            InfoRow("Kullanıcı Adı", member.name?.ifBlank { null } ?: member.username)
-            if (member.deviceModel != null) {
-                Spacer(modifier.height(12.dp))
-                InfoRow("Cihaz Modeli", member.deviceModel.name)
-            }
-            if (member.expiresAt != null) {
-                Spacer(Modifier.height(12.dp))
-                InfoRow("Üyelik Bitişi", member.expiresAt.take(10))
-            }
-            Spacer(Modifier.height(16.dp))
-            DividerLine()
-            Spacer(Modifier.height(16.dp))
-            GlowButton("Çıkış Yap", Red, filled = false, onClick = onLogout)
-        }
-
         // Show a hint while video is playing
         if (!videoFinished) {
             Spacer(Modifier.height(20.dp))
@@ -2124,6 +2105,173 @@ private fun SupportPage(member: MemberInfo, onLogout: () -> Unit) {
                 fontWeight = FontWeight.Medium
             )
         }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Page 6: Profile
+// ═══════════════════════════════════════════════════════════════════════
+
+private fun formatMembershipDate(iso: String?): String {
+    if (iso.isNullOrBlank()) return "Süresiz"
+    val date = iso.take(10)
+    val parts = date.split("-")
+    return if (parts.size == 3) "${parts[2]}.${parts[1]}.${parts[0]}" else date
+}
+
+@Composable
+private fun ProfilePage(member: MemberInfo, onLogout: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var currentPassword by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var showCurrent by remember { mutableStateOf(false) }
+    var showNew by remember { mutableStateOf(false) }
+    var isChangingPassword by remember { mutableStateOf(false) }
+    var passwordMessage by remember { mutableStateOf<String?>(null) }
+    var passwordError by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp)
+            .padding(top = 56.dp, bottom = BottomNavHeight + 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("Profil", color = TextWhite, fontSize = 26.sp, fontWeight = FontWeight.Black)
+        Spacer(Modifier.height(6.dp))
+        BodyText("Hesap bilgileriniz ve şifre ayarları", TextGray)
+        Spacer(Modifier.height(28.dp))
+
+        GlowCard {
+            Text("Hesap Bilgileri", color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(16.dp))
+            InfoRow("Kullanıcı Adı", member.username)
+            Spacer(Modifier.height(12.dp))
+            InfoRow("Ad Soyad", member.name?.ifBlank { null } ?: "—")
+            Spacer(Modifier.height(12.dp))
+            InfoRow("Cihaz Modeli", member.deviceModel?.name ?: "Seçilmedi")
+            Spacer(Modifier.height(12.dp))
+            InfoRow("Üyelik Bitişi", formatMembershipDate(member.expiresAt))
+            Spacer(Modifier.height(12.dp))
+            InfoRow("Uygulama", "v${FccViewModel.APP_VERSION}")
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        GlowCard {
+            Text("Şifre Değiştir", color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(14.dp))
+
+            OutlinedTextField(
+                value = currentPassword,
+                onValueChange = { currentPassword = it; passwordMessage = null },
+                label = { Text("Mevcut şifre") },
+                singleLine = true,
+                visualTransformation = if (showCurrent) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { showCurrent = !showCurrent }) {
+                        Icon(
+                            if (showCurrent) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                            contentDescription = null,
+                            tint = TextGray
+                        )
+                    }
+                },
+                colors = loginFieldColors(),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = newPassword,
+                onValueChange = { newPassword = it; passwordMessage = null },
+                label = { Text("Yeni şifre") },
+                singleLine = true,
+                visualTransformation = if (showNew) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { showNew = !showNew }) {
+                        Icon(
+                            if (showNew) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                            contentDescription = null,
+                            tint = TextGray
+                        )
+                    }
+                },
+                colors = loginFieldColors(),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = confirmPassword,
+                onValueChange = { confirmPassword = it; passwordMessage = null },
+                label = { Text("Yeni şifre (tekrar)") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                colors = loginFieldColors(),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            AnimatedVisibility(visible = passwordMessage != null) {
+                Column {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        passwordMessage ?: "",
+                        color = if (passwordError) Red else Green,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            GlowButton(
+                if (isChangingPassword) "Kaydediliyor..." else "Şifreyi Güncelle",
+                Cyan,
+                enabled = !isChangingPassword &&
+                    currentPassword.isNotBlank() &&
+                    newPassword.length >= 6 &&
+                    confirmPassword.isNotBlank()
+            ) {
+                if (newPassword != confirmPassword) {
+                    passwordError = true
+                    passwordMessage = "Yeni şifreler eşleşmiyor."
+                    return@GlowButton
+                }
+                if (newPassword.length < 6) {
+                    passwordError = true
+                    passwordMessage = "Yeni şifre en az 6 karakter olmalı."
+                    return@GlowButton
+                }
+                val token = AuthManager.getToken(context) ?: return@GlowButton
+                isChangingPassword = true
+                passwordMessage = null
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        AuthApi.changePassword(token, currentPassword, newPassword, confirmPassword)
+                    }
+                    isChangingPassword = false
+                    when (result) {
+                        is AuthResult.Success -> {
+                            passwordError = false
+                            passwordMessage = "Şifreniz güncellendi."
+                            currentPassword = ""
+                            newPassword = ""
+                            confirmPassword = ""
+                        }
+                        is AuthResult.Failure -> {
+                            passwordError = true
+                            passwordMessage = result.error.message
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        GlowButton("Çıkış Yap", Red, filled = false, onClick = onLogout)
     }
 }
 
@@ -2520,7 +2668,8 @@ private fun BottomNavBar(
         Triple("Bilgi", Icons.Filled.Info, Green),
         Triple("Günlük", Icons.Filled.History, Amber),
         Triple("Güncelle", Icons.Filled.SystemUpdate, Purple),
-        Triple("Destek", Icons.Filled.Favorite, Pink)
+        Triple("Destek", Icons.Filled.Favorite, Pink),
+        Triple("Profil", Icons.Filled.Person, Cyan)
     )
 
     Surface(

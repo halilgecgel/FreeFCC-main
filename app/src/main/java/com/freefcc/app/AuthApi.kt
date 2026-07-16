@@ -154,7 +154,7 @@ object AuthApi {
         }
     }
 
-    /** Marks the member offline without revoking the token. Called on app background/close. */
+    /** Marks the member offline without revoking the token. Prefer logout for session end. */
     fun goOffline(token: String) {
         try {
             request("POST", "/offline", body = null, token = token)
@@ -168,6 +168,25 @@ object AuthApi {
             request("POST", "/logout", body = null, token = token)
         } catch (_: Exception) {
         }
+    }
+
+    fun changePassword(
+        token: String,
+        currentPassword: String,
+        newPassword: String,
+        newPasswordConfirmation: String
+    ): AuthResult<Unit> {
+        val body = JSONObject().apply {
+            put("current_password", currentPassword)
+            put("password", newPassword)
+            put("password_confirmation", newPasswordConfirmation)
+        }
+
+        val (code, json) = request("POST", "/me/password", body, token = token)
+            ?: return networkError()
+
+        if (code == 200) return AuthResult.Success(Unit)
+        return AuthResult.Failure(parseError(json))
     }
 
     private fun parseMember(member: JSONObject): MemberInfo {

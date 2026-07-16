@@ -19,6 +19,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/heartbeat', [AuthController::class, 'heartbeat']);
         Route::post('/offline', [AuthController::class, 'offline']);
         Route::post('/logout', [AuthController::class, 'logout']);
+        Route::post('/me/password', [AuthController::class, 'changePassword']);
         Route::get('/notifications', [NotificationController::class, 'index']);
 
         Route::get('/device-models', [DeviceModelController::class, 'index']);

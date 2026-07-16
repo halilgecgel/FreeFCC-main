@@ -159,6 +159,29 @@ class AuthController extends Controller
         return response()->json(['status' => 'ok']);
     }
 
+    public function changePassword(Request $request)
+    {
+        $data = $request->validate([
+            'current_password' => ['required', 'string'],
+            'password' => ['required', 'string', 'min:6', 'confirmed'],
+        ]);
+
+        $member = $request->user();
+
+        if (! Hash::check($data['current_password'], $member->password)) {
+            return $this->error('invalid_credentials', 'Mevcut şifre hatalı.', 422);
+        }
+
+        $member->forceFill([
+            'password' => Hash::make($data['password']),
+        ])->save();
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Şifreniz güncellendi.',
+        ]);
+    }
+
     private function logAttempt(?Member $member, array $data, bool $success, string $reason): void
     {
         LoginLog::create([

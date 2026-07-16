@@ -36,6 +36,7 @@ class FccKeepaliveService : Service() {
         const val ACTION_START = "com.freefcc.app.START_KEEPALIVE"
         const val ACTION_STOP = "com.freefcc.app.STOP_KEEPALIVE"
         private const val INTERVAL_MS = 2000L
+        private const val HEARTBEAT_INTERVAL_MS = 60_000L
         private const val PREFS_NAME = "freefcc"
         private const val PREF_KEEPALIVE = "keepalive_running"
 
@@ -69,6 +70,7 @@ class FccKeepaliveService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var keepaliveJob: Job? = null
+    private var heartbeatJob: Job? = null
     private val transport = DumlTransport()
 
     /** Cached at onCreate — loading JSON + building frames on every 2s tick is wasteful. */
@@ -95,6 +97,7 @@ class FccKeepaliveService : Service() {
         when (intent?.action) {
             ACTION_STOP -> {
                 keepaliveJob?.cancel()
+                heartbeatJob?.cancel()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
@@ -115,9 +118,23 @@ class FccKeepaliveService : Service() {
                 }
                 startForeground(NOTIFICATION_ID, createNotification())
                 startKeepaliveLoop()
+                startHeartbeatLoop()
             }
         }
         return START_STICKY
+    }
+
+    private fun startHeartbeatLoop() {
+        heartbeatJob?.cancel()
+        heartbeatJob = scope.launch {
+            while (true) {
+                val token = AuthManager.getToken(this@FccKeepaliveService)
+                if (token != null) {
+                    AuthApi.heartbeat(token)
+                }
+                delay(HEARTBEAT_INTERVAL_MS)
+            }
+        }
     }
 
     private fun startKeepaliveLoop() {
@@ -205,6 +222,7 @@ class FccKeepaliveService : Service() {
 
     override fun onDestroy() {
         keepaliveJob?.cancel()
+        heartbeatJob?.cancel()
         scope.cancel()
         super.onDestroy()
     }
