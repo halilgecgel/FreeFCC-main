@@ -58,6 +58,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import kotlin.math.sin
 import kotlin.math.cos
 import kotlin.math.PI
@@ -1975,7 +1978,7 @@ private fun UpdatePage(state: AppState, viewModel: FccViewModel) {
                     else -> {
                         state.updateDownloadError?.let { err ->
                             Text(err, color = Red, fontSize = 13.sp)
-                            Spacer(modifier.height(12.dp))
+                            Spacer(Modifier.height(12.dp))
                         }
                         GlowButton("İndir", Green) {
                             viewModel.downloadUpdate()
@@ -2022,25 +2025,29 @@ private fun SupportPage() {
         PageTitle("Destek", Icons.Outlined.FavoriteBorder)
         Spacer(Modifier.height(24.dp))
 
-        // Video player
+        // Video player (portrait source: 9:16)
         Surface(
             color = Color.Black,
             shape = RoundedCornerShape(16.dp),
             border = BorderStroke(1.dp, CardBorder),
             modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f)
+                .fillMaxWidth(0.72f)
+                .aspectRatio(9f / 16f)
         ) {
             AndroidView(
                 factory = { ctx ->
                     VideoView(ctx).apply {
                         val videoUri = Uri.parse("android.resource://${ctx.packageName}/${R.raw.on_lira}")
-                        setVideoURI(videoUri)
+                        setOnErrorListener { _, _, _ ->
+                            videoFinished = true
+                            true
+                        }
                         setOnCompletionListener { videoFinished = true }
                         setOnPreparedListener { mp ->
                             mp.isLooping = false
                             start()
                         }
+                        setVideoURI(videoUri)
                     }
                 },
                 modifier = Modifier.fillMaxSize()
@@ -2125,6 +2132,15 @@ private fun SupportPage() {
 // Page 6: Profile
 // ═══════════════════════════════════════════════════════════════════════
 
+private data class MembershipStatus(
+    val label: String,
+    val detail: String,
+    val color: Color,
+    val progress: Float?,
+    val isUnlimited: Boolean,
+    val isExpired: Boolean
+)
+
 private fun formatMembershipDate(iso: String?): String {
     if (iso.isNullOrBlank()) return "Süresiz"
     val date = iso.take(10)
@@ -2132,10 +2148,84 @@ private fun formatMembershipDate(iso: String?): String {
     return if (parts.size == 3) "${parts[2]}.${parts[1]}.${parts[0]}" else date
 }
 
+private fun membershipStatus(expiresAt: String?): MembershipStatus {
+    if (expiresAt.isNullOrBlank()) {
+        return MembershipStatus(
+            label = "Aktif",
+            detail = "Süre sınırı yok",
+            color = Green,
+            progress = null,
+            isUnlimited = true,
+            isExpired = false
+        )
+    }
+    return try {
+        val end = LocalDate.parse(expiresAt.take(10), DateTimeFormatter.ISO_LOCAL_DATE)
+        val today = LocalDate.now()
+        val days = ChronoUnit.DAYS.between(today, end)
+        when {
+            days < 0 -> MembershipStatus(
+                label = "Süresi Doldu",
+                detail = "Bitiş: ${formatMembershipDate(expiresAt)}",
+                color = Red,
+                progress = 0f,
+                isUnlimited = false,
+                isExpired = true
+            )
+            days <= 7 -> MembershipStatus(
+                label = "Kritik",
+                detail = "$days gün kaldı · ${formatMembershipDate(expiresAt)}",
+                color = Amber,
+                progress = (days / 30f).coerceIn(0.05f, 1f),
+                isUnlimited = false,
+                isExpired = false
+            )
+            days <= 30 -> MembershipStatus(
+                label = "Yaklaşıyor",
+                detail = "$days gün kaldı · ${formatMembershipDate(expiresAt)}",
+                color = Amber,
+                progress = (days / 90f).coerceIn(0.1f, 1f),
+                isUnlimited = false,
+                isExpired = false
+            )
+            else -> MembershipStatus(
+                label = "Aktif",
+                detail = "$days gün kaldı · ${formatMembershipDate(expiresAt)}",
+                color = Green,
+                progress = (days / 365f).coerceIn(0.2f, 1f),
+                isUnlimited = false,
+                isExpired = false
+            )
+        }
+    } catch (_: Exception) {
+        MembershipStatus(
+            label = "Aktif",
+            detail = formatMembershipDate(expiresAt),
+            color = Cyan,
+            progress = null,
+            isUnlimited = false,
+            isExpired = false
+        )
+    }
+}
+
+private fun profileInitials(member: MemberInfo): String {
+    val source = member.name?.trim()?.takeIf { it.isNotEmpty() } ?: member.username
+    val parts = source.split(Regex("\\s+")).filter { it.isNotBlank() }
+    return when {
+        parts.size >= 2 -> "${parts[0].first()}${parts[1].first()}".uppercase()
+        parts.isNotEmpty() -> parts[0].take(2).uppercase()
+        else -> "HG"
+    }
+}
+
 @Composable
 private fun ProfilePage(member: MemberInfo, onLogout: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
+    val membership = remember(member.expiresAt) { membershipStatus(member.expiresAt) }
+    val displayName = member.name?.ifBlank { null } ?: member.username
+    val initials = remember(member) { profileInitials(member) }
 
     var currentPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
@@ -2145,146 +2235,624 @@ private fun ProfilePage(member: MemberInfo, onLogout: () -> Unit) {
     var isChangingPassword by remember { mutableStateOf(false) }
     var passwordMessage by remember { mutableStateOf<String?>(null) }
     var passwordError by remember { mutableStateOf(false) }
+    var passwordExpanded by remember { mutableStateOf(false) }
+
+    val heroPulse = rememberInfiniteTransition(label = "profileHero")
+    val glowAlpha by heroPulse.animateFloat(
+        0.35f, 0.75f,
+        infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "glow"
+    )
+    val ringScale by heroPulse.animateFloat(
+        1f, 1.06f,
+        infiniteRepeatable(tween(2800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "ring"
+    )
+
+    val enterAlpha = remember { Animatable(0f) }
+    val enterOffset = remember { Animatable(24f) }
+    LaunchedEffect(Unit) {
+        launch { enterAlpha.animateTo(1f, tween(500)) }
+        launch { enterOffset.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy)) }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
-            .padding(top = 56.dp, bottom = BottomNavHeight + 24.dp),
+            .padding(top = 48.dp, bottom = BottomNavHeight + 28.dp)
+            .alpha(enterAlpha.value)
+            .offset(y = enterOffset.value.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Profil", color = TextWhite, fontSize = 26.sp, fontWeight = FontWeight.Black)
+        PageTitle("Profil", Icons.Outlined.Person)
         Spacer(Modifier.height(6.dp))
-        BodyText("Hesap bilgileriniz ve şifre ayarları", TextGray)
+        BodyText("Hesap, üyelik ve güvenlik ayarları", TextGray)
         Spacer(Modifier.height(28.dp))
 
-        GlowCard {
-            Text("Hesap Bilgileri", color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(16.dp))
-            InfoRow("Kullanıcı Adı", member.username)
-            Spacer(Modifier.height(12.dp))
-            InfoRow("Ad Soyad", member.name?.ifBlank { null } ?: "—")
-            Spacer(Modifier.height(12.dp))
-            InfoRow("Cihaz Modeli", member.deviceModel?.name ?: "Seçilmedi")
-            Spacer(Modifier.height(12.dp))
-            InfoRow("Üyelik Bitişi", formatMembershipDate(member.expiresAt))
-            Spacer(Modifier.height(12.dp))
-            InfoRow("Uygulama", "v${FccViewModel.APP_VERSION}")
+        // ── Hero card ──
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(22.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color(0xFF162044),
+                            CardBg,
+                            Color(0xFF0C1228)
+                        )
+                    )
+                )
+                .border(
+                    BorderStroke(1.dp, Cyan.copy(0.25f + glowAlpha * 0.2f)),
+                    RoundedCornerShape(22.dp)
+                )
+                .padding(horizontal = 22.dp, vertical = 28.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.radialGradient(
+                            listOf(
+                                Cyan.copy(0.12f * glowAlpha),
+                                Purple.copy(0.06f * glowAlpha),
+                                Color.Transparent
+                            ),
+                            radius = 420f
+                        )
+                    )
+            )
+
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .size(104.dp)
+                            .scale(ringScale)
+                            .background(
+                                Brush.radialGradient(
+                                    listOf(membership.color.copy(0.35f * glowAlpha), Color.Transparent)
+                                ),
+                                CircleShape
+                            )
+                    )
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(88.dp)
+                            .background(
+                                Brush.linearGradient(listOf(Cyan.copy(0.25f), Purple.copy(0.2f))),
+                                CircleShape
+                            )
+                            .border(BorderStroke(2.dp, membership.color.copy(0.7f)), CircleShape)
+                    ) {
+                        Text(
+                            initials,
+                            color = TextWhite,
+                            fontSize = 30.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                    }
+                    Surface(
+                        color = membership.color.copy(0.18f),
+                        shape = CircleShape,
+                        border = BorderStroke(1.5.dp, membership.color.copy(0.8f)),
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .offset(x = (-2).dp, y = (-2).dp)
+                            .size(22.dp)
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Box(
+                                Modifier
+                                    .size(9.dp)
+                                    .background(membership.color, CircleShape)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    displayName,
+                    color = TextWhite,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Black,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "@${member.username}",
+                    color = TextGray,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(Modifier.height(14.dp))
+                Surface(
+                    color = membership.color.copy(0.12f),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, membership.color.copy(0.35f))
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                    ) {
+                        Icon(
+                            if (membership.isUnlimited) Icons.Filled.AllInclusive
+                            else if (membership.isExpired) Icons.Filled.Warning
+                            else Icons.Filled.Verified,
+                            null,
+                            tint = membership.color,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Üyelik · ${membership.label}",
+                            color = membership.color,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
         }
 
         Spacer(Modifier.height(16.dp))
 
+        // ── Membership status ──
         GlowCard {
-            Text("Şifre Değiştir", color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(14.dp))
-
-            OutlinedTextField(
-                value = currentPassword,
-                onValueChange = { currentPassword = it; passwordMessage = null },
-                label = { Text("Mevcut şifre") },
-                singleLine = true,
-                visualTransformation = if (showCurrent) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = { showCurrent = !showCurrent }) {
-                        Icon(
-                            if (showCurrent) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                            contentDescription = null,
-                            tint = TextGray
-                        )
-                    }
-                },
-                colors = loginFieldColors(),
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = newPassword,
-                onValueChange = { newPassword = it; passwordMessage = null },
-                label = { Text("Yeni şifre") },
-                singleLine = true,
-                visualTransformation = if (showNew) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = { showNew = !showNew }) {
-                        Icon(
-                            if (showNew) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                            contentDescription = null,
-                            tint = TextGray
-                        )
-                    }
-                },
-                colors = loginFieldColors(),
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = confirmPassword,
-                onValueChange = { confirmPassword = it; passwordMessage = null },
-                label = { Text("Yeni şifre (tekrar)") },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                colors = loginFieldColors(),
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            AnimatedVisibility(visible = passwordMessage != null) {
-                Column {
-                    Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        passwordMessage ?: "",
-                        color = if (passwordError) Red else Green,
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp
+                        "ÜYELİK DURUMU",
+                        color = TextDim,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.8.sp
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        membership.label,
+                        color = membership.color,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        membership.detail,
+                        color = TextGray,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                }
+                Icon(
+                    if (membership.isUnlimited) Icons.Outlined.WorkspacePremium
+                    else Icons.Outlined.EventAvailable,
+                    null,
+                    tint = membership.color.copy(0.85f),
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+            if (membership.progress != null) {
+                Spacer(Modifier.height(16.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(BgLight)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(membership.progress)
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(membership.color.copy(0.7f), membership.color)
+                                )
+                            )
                     )
                 }
             }
+        }
 
+        Spacer(Modifier.height(16.dp))
+
+        // ── Stats grid ──
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ProfileStatTile(
+                icon = Icons.Outlined.Devices,
+                label = "Cihaz",
+                value = member.deviceModel?.name ?: "Seçilmedi",
+                accent = Cyan,
+                modifier = Modifier.weight(1f)
+            )
+            ProfileStatTile(
+                icon = Icons.Outlined.Info,
+                label = "Sürüm",
+                value = "v${FccViewModel.APP_VERSION}",
+                accent = Purple,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ProfileStatTile(
+                icon = Icons.Outlined.Badge,
+                label = "Kullanıcı",
+                value = member.username,
+                accent = Green,
+                modifier = Modifier.weight(1f)
+            )
+            ProfileStatTile(
+                icon = Icons.Outlined.CalendarMonth,
+                label = "Bitiş",
+                value = formatMembershipDate(member.expiresAt),
+                accent = if (membership.isExpired) Red else Amber,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // ── Account details ──
+        GlowCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.ManageAccounts, null, tint = Cyan, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("Hesap Detayları", color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
             Spacer(Modifier.height(16.dp))
-            GlowButton(
-                if (isChangingPassword) "Kaydediliyor..." else "Şifreyi Güncelle",
-                Cyan,
-                enabled = !isChangingPassword &&
-                    currentPassword.isNotBlank() &&
-                    newPassword.length >= 6 &&
-                    confirmPassword.isNotBlank()
+            ProfileDetailRow(Icons.Outlined.Person, "Ad Soyad", member.name?.ifBlank { null } ?: "—")
+            Spacer(Modifier.height(10.dp))
+            DividerLine(0.35f)
+            Spacer(Modifier.height(10.dp))
+            ProfileDetailRow(Icons.Outlined.AlternateEmail, "Kullanıcı Adı", member.username)
+            Spacer(Modifier.height(10.dp))
+            DividerLine(0.35f)
+            Spacer(Modifier.height(10.dp))
+            ProfileDetailRow(
+                Icons.Outlined.PhonelinkSetup,
+                "Cihaz Modeli",
+                member.deviceModel?.name ?: "Seçilmedi",
+                valueColor = if (member.deviceModel != null) TextWhite else Amber
+            )
+            if (!member.deviceModel?.description.isNullOrBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    member.deviceModel!!.description!!,
+                    color = TextDim,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.padding(start = 34.dp)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // ── Password (expandable) ──
+        GlowCard {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { passwordExpanded = !passwordExpanded }
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (newPassword != confirmPassword) {
-                    passwordError = true
-                    passwordMessage = "Yeni şifreler eşleşmiyor."
-                    return@GlowButton
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(Cyan.copy(0.12f), RoundedCornerShape(12.dp))
+                ) {
+                    Icon(Icons.Outlined.Lock, null, tint = Cyan, modifier = Modifier.size(20.dp))
                 }
-                if (newPassword.length < 6) {
-                    passwordError = true
-                    passwordMessage = "Yeni şifre en az 6 karakter olmalı."
-                    return@GlowButton
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Şifre Değiştir", color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("Hesap güvenliğinizi güncelleyin", color = TextDim, fontSize = 12.sp)
                 }
-                val token = AuthManager.getToken(context) ?: return@GlowButton
-                isChangingPassword = true
-                passwordMessage = null
-                scope.launch {
-                    val result = withContext(Dispatchers.IO) {
-                        AuthApi.changePassword(token, currentPassword, newPassword, confirmPassword)
+                Icon(
+                    if (passwordExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    null,
+                    tint = TextGray,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            AnimatedVisibility(
+                visible = passwordExpanded,
+                enter = expandVertically(tween(280)) + fadeIn(tween(220)),
+                exit = shrinkVertically(tween(220)) + fadeOut(tween(160))
+            ) {
+                Column {
+                    Spacer(Modifier.height(16.dp))
+                    DividerLine(0.4f)
+                    Spacer(Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = currentPassword,
+                        onValueChange = { currentPassword = it; passwordMessage = null },
+                        label = { Text("Mevcut şifre") },
+                        singleLine = true,
+                        visualTransformation = if (showCurrent) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { showCurrent = !showCurrent }) {
+                                Icon(
+                                    if (showCurrent) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    contentDescription = null,
+                                    tint = TextGray
+                                )
+                            }
+                        },
+                        colors = loginFieldColors(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = newPassword,
+                        onValueChange = { newPassword = it; passwordMessage = null },
+                        label = { Text("Yeni şifre") },
+                        singleLine = true,
+                        visualTransformation = if (showNew) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { showNew = !showNew }) {
+                                Icon(
+                                    if (showNew) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    contentDescription = null,
+                                    tint = TextGray
+                                )
+                            }
+                        },
+                        colors = loginFieldColors(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (newPassword.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        PasswordStrengthBar(newPassword)
                     }
-                    isChangingPassword = false
-                    when (result) {
-                        is AuthResult.Success -> {
-                            passwordError = false
-                            passwordMessage = "Şifreniz güncellendi."
-                            currentPassword = ""
-                            newPassword = ""
-                            confirmPassword = ""
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = confirmPassword,
+                        onValueChange = { confirmPassword = it; passwordMessage = null },
+                        label = { Text("Yeni şifre (tekrar)") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        colors = loginFieldColors(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    AnimatedVisibility(visible = passwordMessage != null) {
+                        Column {
+                            Spacer(Modifier.height(12.dp))
+                            Surface(
+                                color = (if (passwordError) Red else Green).copy(0.1f),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(
+                                    1.dp,
+                                    (if (passwordError) Red else Green).copy(0.35f)
+                                )
+                            ) {
+                                Text(
+                                    passwordMessage ?: "",
+                                    color = if (passwordError) Red else Green,
+                                    fontSize = 13.sp,
+                                    lineHeight = 18.sp,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                                )
+                            }
                         }
-                        is AuthResult.Failure -> {
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+                    GlowButton(
+                        if (isChangingPassword) "Kaydediliyor..." else "Şifreyi Güncelle",
+                        Cyan,
+                        enabled = !isChangingPassword &&
+                            currentPassword.isNotBlank() &&
+                            newPassword.length >= 6 &&
+                            confirmPassword.isNotBlank()
+                    ) {
+                        if (newPassword != confirmPassword) {
                             passwordError = true
-                            passwordMessage = result.error.message
+                            passwordMessage = "Yeni şifreler eşleşmiyor."
+                            return@GlowButton
+                        }
+                        if (newPassword.length < 6) {
+                            passwordError = true
+                            passwordMessage = "Yeni şifre en az 6 karakter olmalı."
+                            return@GlowButton
+                        }
+                        val token = AuthManager.getToken(context) ?: return@GlowButton
+                        isChangingPassword = true
+                        passwordMessage = null
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                AuthApi.changePassword(token, currentPassword, newPassword, confirmPassword)
+                            }
+                            isChangingPassword = false
+                            when (result) {
+                                is AuthResult.Success -> {
+                                    passwordError = false
+                                    passwordMessage = "Şifreniz güncellendi."
+                                    currentPassword = ""
+                                    newPassword = ""
+                                    confirmPassword = ""
+                                }
+                                is AuthResult.Failure -> {
+                                    passwordError = true
+                                    passwordMessage = result.error.message
+                                }
+                            }
                         }
                     }
                 }
             }
         }
 
-        Spacer(Modifier.height(16.dp))
-        GlowButton("Çıkış Yap", Red, filled = false, onClick = onLogout)
+        Spacer(Modifier.height(20.dp))
+
+        Surface(
+            color = Red.copy(0.08f),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Red.copy(0.35f)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onLogout)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(vertical = 16.dp)
+            ) {
+                Icon(Icons.Outlined.Logout, null, tint = Red, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "Çıkış Yap",
+                    color = Red,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.4.sp
+                )
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+        Text(
+            "Oturum bu cihazda güvenli şekilde tutulur",
+            color = TextDim,
+            fontSize = 11.sp,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun ProfileStatTile(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+    accent: Color,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = Color.Transparent,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, CardBorder.copy(0.75f)),
+        modifier = modifier
+            .background(
+                Brush.verticalGradient(listOf(CardBg, Color(0xFF0E1530))),
+                RoundedCornerShape(16.dp)
+            )
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(34.dp)
+                    .background(accent.copy(0.12f), RoundedCornerShape(10.dp))
+            ) {
+                Icon(icon, null, tint = accent, modifier = Modifier.size(18.dp))
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                label.uppercase(),
+                color = TextDim,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                value,
+                color = TextWhite,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                lineHeight = 18.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProfileDetailRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+    valueColor: Color = TextWhite
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, tint = TextDim, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, color = TextGray, fontSize = 12.sp)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                value,
+                color = valueColor,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2
+            )
+        }
+    }
+}
+
+@Composable
+private fun PasswordStrengthBar(password: String) {
+    val score = remember(password) {
+        var s = 0
+        if (password.length >= 6) s++
+        if (password.length >= 10) s++
+        if (password.any { it.isDigit() }) s++
+        if (password.any { it.isUpperCase() } && password.any { it.isLowerCase() }) s++
+        s
+    }
+    val (label, color) = when (score) {
+        0, 1 -> "Zayıf" to Red
+        2 -> "Orta" to Amber
+        3 -> "İyi" to Cyan
+        else -> "Güçlü" to Green
+    }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            repeat(4) { i ->
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(if (i < score) color else BgLight)
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Şifre gücü: $label",
+            color = color.copy(0.9f),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 
