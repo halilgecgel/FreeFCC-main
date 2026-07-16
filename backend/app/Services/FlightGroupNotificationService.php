@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Sends flight start/end notices to the ŞANLIURFA DRONE PİLOTLARI WhatsApp group.
+ * Sends flight start/end notices to WhatsApp (group by name, or temporary phone override).
  */
 class FlightGroupNotificationService
 {
@@ -45,9 +45,9 @@ class FlightGroupNotificationService
             return;
         }
 
-        $groupJid = $this->resolveGroupJid();
-        if ($groupJid === null) {
-            Log::warning('FlightGroupNotification: WhatsApp grubu bulunamadı');
+        $recipient = $this->resolveRecipient();
+        if ($recipient === null) {
+            Log::warning('FlightGroupNotification: WhatsApp alıcısı bulunamadı');
 
             return;
         }
@@ -57,11 +57,11 @@ class FlightGroupNotificationService
             : $this->buildEndMessage($member, $session, $location);
 
         try {
-            $this->evolution->sendText($groupJid, $message);
+            $this->evolution->sendText($recipient, $message);
             Log::info('FlightGroupNotification: mesaj gönderildi', [
                 'member_id' => $member->id,
                 'action' => $session->action,
-                'group' => $groupJid,
+                'recipient' => $recipient,
             ]);
         } catch (\Throwable $e) {
             Log::error('FlightGroupNotification: mesaj gönderilemedi', [
@@ -70,6 +70,19 @@ class FlightGroupNotificationService
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Prefer temporary phone override; otherwise resolve the configured group.
+     */
+    public function resolveRecipient(): ?string
+    {
+        $override = trim((string) config('services.evolution.flight_notify_to', ''));
+        if ($override !== '') {
+            return $override;
+        }
+
+        return $this->resolveGroupJid();
     }
 
     /**

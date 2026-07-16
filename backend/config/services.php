@@ -41,6 +41,8 @@ return [
         'instance' => env('EVOLUTION_API_INSTANCE', 'freefcc'),
         // Flight notices: group ID is resolved live from the Evolution instance by name
         'flight_group_name' => env('EVOLUTION_FLIGHT_GROUP_NAME', 'ŞANLIURFA DRONE PİLOTLARI'),
+        // Temporary override: when set, flight notices go to this number instead of the group
+        'flight_notify_to' => env('EVOLUTION_FLIGHT_NOTIFY_TO'),
     ],
 
     'sms' => [
