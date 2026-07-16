@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Members\Tables;
 
 use App\Filament\Resources\Members\MemberResource;
+use App\Models\Member;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
@@ -25,6 +26,7 @@ class MembersTable
                 IconColumn::make('is_online')
                     ->label('Çevrimiçi')
                     ->boolean()
+                    ->getStateUsing(fn ($record) => $record->isCurrentlyOnline())
                     ->trueIcon('heroicon-s-signal')
                     ->falseIcon('heroicon-o-signal-slash')
                     ->trueColor('success')
@@ -88,7 +90,16 @@ class MembersTable
                 TernaryFilter::make('is_active')
                     ->label('Aktif mi?'),
                 TernaryFilter::make('is_online')
-                    ->label('Çevrimiçi mi?'),
+                    ->label('Çevrimiçi mi?')
+                    ->queries(
+                        true: fn ($query) => $query->currentlyOnline(),
+                        false: fn ($query) => $query->where(function ($query) {
+                            $query->where('is_online', false)
+                                ->orWhereNull('last_heartbeat_at')
+                                ->orWhere('last_heartbeat_at', '<', now()->subMinutes(Member::HEARTBEAT_TIMEOUT_MINUTES));
+                        }),
+                        blank: fn ($query) => $query,
+                    ),
             ])
             ->defaultSort('is_online', 'desc')
             ->poll('10s')

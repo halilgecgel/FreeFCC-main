@@ -96,8 +96,8 @@ class MainActivity : ComponentActivity() {
     ) { /* granted or denied — no further action needed */ }
 
     private val locationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { /* optional — telemetry uses last-known location when granted */ }
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { /* optional — telemetry uses device GPS when granted */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -158,10 +158,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestLocationPermission() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+        val needFine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED
-        ) {
-            locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+        val needCoarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        if (needFine || needCoarse) {
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
         }
     }
 }
@@ -640,10 +647,15 @@ private fun AppRoot(viewModel: FccViewModel) {
 
     val onLogout: () -> Unit = {
         val token = AuthManager.getToken(context)
-        AuthManager.clearSession(context)
+        // Stop heartbeat/me loops immediately, then revoke server session before clearing local token.
         authState = AuthUiState.LoggedOut()
         if (token != null) {
-            authScope.launch(Dispatchers.IO) { AuthApi.logout(token) }
+            authScope.launch(Dispatchers.IO) {
+                AuthApi.logout(token)
+                AuthManager.clearSession(context)
+            }
+        } else {
+            AuthManager.clearSession(context)
         }
     }
 

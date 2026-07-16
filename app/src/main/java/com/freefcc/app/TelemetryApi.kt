@@ -178,22 +178,19 @@ object TelemetryApi {
         return post("/telemetry/connection-metrics", body, token)
     }
 
-    /** Measures round-trip time to the heartbeat endpoint. Returns ms or null. */
+    /** Measures round-trip time to /me (does not mark the member online). Returns ms or null. */
     fun measureServerPing(token: String): Int? {
         var conn: HttpURLConnection? = null
         return try {
             val start = System.currentTimeMillis()
-            conn = (URL(AuthApi.BASE_URL + "/heartbeat").openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
+            conn = (URL(AuthApi.BASE_URL + "/me").openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
                 connectTimeout = 8000
                 readTimeout = 8000
                 setRequestProperty("Accept", "application/json")
-                setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Authorization", "Bearer $token")
                 setRequestProperty("User-Agent", "FreeFCC-App")
-                doOutput = true
             }
-            conn.outputStream.use { it.write("{}".toByteArray(Charsets.UTF_8)) }
             val code = conn.responseCode
             if (code in 200..299) (System.currentTimeMillis() - start).toInt() else null
         } catch (_: Exception) {

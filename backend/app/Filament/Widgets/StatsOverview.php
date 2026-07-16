@@ -22,7 +22,7 @@ class StatsOverview extends StatsOverviewWidget
     protected function getStats(): array
     {
         $totalMembers = Member::query()->count();
-        $onlineMembers = Member::query()->where('is_online', true)->count();
+        $onlineMembers = Member::query()->currentlyOnline()->count();
         $activeMembers = Member::query()
             ->where('is_active', true)
             ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))

@@ -4,18 +4,30 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Geocoder
+import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import android.os.Bundle
+import android.os.HandlerThread
+import android.os.Looper
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.resume
 
 object TelemetryCollector {
+
+    private const val FRESH_LOCATION_MAX_AGE_MS = 10 * 60 * 1000L
+    private const val LOCATION_FIX_TIMEOUT_MS = 12_000L
 
     private val pendingFeatureEvents = CopyOnWriteArrayList<FeatureEvent>()
     private val disconnectionCount = AtomicInteger(0)
@@ -93,7 +105,7 @@ object TelemetryCollector {
         val locale = Locale.getDefault()
         val countryCode = locale.country.takeIf { it.isNotEmpty() }
         val localeTag = locale.toLanguageTag()
-        val location = readLastKnownLocation(context)
+        val location = obtainCoordinates(context)
 
         withContext(Dispatchers.IO) {
             val pingMs = TelemetryApi.measureServerPing(token)
@@ -234,13 +246,15 @@ object TelemetryCollector {
         }
     }
 
-    private fun resolveLocationInfo(context: Context): LocationInfo {
-        val coords = readLastKnownLocation(context)
+    private suspend fun resolveLocationInfo(context: Context): LocationInfo {
+        val coords = obtainCoordinates(context)
         if (coords == null) {
             return LocationInfo(null, null, null, null, null)
         }
 
-        val address = reverseGeocode(context, coords.first, coords.second)
+        val address = withContext(Dispatchers.IO) {
+            reverseGeocode(context, coords.first, coords.second)
+        }
         return LocationInfo(
             latitude = coords.first,
             longitude = coords.second,
@@ -282,27 +296,150 @@ object TelemetryCollector {
         }
     }
 
-    private fun readLastKnownLocation(context: Context): Pair<Double, Double>? {
-        val granted = ContextCompat.checkSelfPermission(
+    private fun hasLocationPermission(context: Context): Boolean {
+        val fine = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(
             context, Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
-        if (!granted) return null
+        return fine || coarse
+    }
+
+    private fun hasFineLocationPermission(context: Context): Boolean {
+        return ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun locationAgeMs(location: Location): Long {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            val ageNs = SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos
+            (ageNs / 1_000_000L).coerceAtLeast(0L)
+        } else {
+            (System.currentTimeMillis() - location.time).coerceAtLeast(0L)
+        }
+    }
+
+    private fun readBestLastKnownLocation(context: Context): Location? {
+        if (!hasLocationPermission(context)) return null
 
         return try {
             val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            val providers = listOf(
-                LocationManager.NETWORK_PROVIDER,
-                LocationManager.GPS_PROVIDER,
-                LocationManager.PASSIVE_PROVIDER
-            )
+            val providers = buildList {
+                if (hasFineLocationPermission(context)) {
+                    add(LocationManager.GPS_PROVIDER)
+                }
+                add(LocationManager.NETWORK_PROVIDER)
+                add(LocationManager.PASSIVE_PROVIDER)
+            }
+
+            var best: Location? = null
             for (provider in providers) {
                 if (!lm.isProviderEnabled(provider)) continue
                 val loc = lm.getLastKnownLocation(provider) ?: continue
-                return Pair(loc.latitude, loc.longitude)
+                val current = best
+                if (current == null ||
+                    locationAgeMs(loc) < locationAgeMs(current) ||
+                    (locationAgeMs(loc) == locationAgeMs(current) && loc.accuracy < current.accuracy)
+                ) {
+                    best = loc
+                }
             }
-            null
+            best
         } catch (_: Exception) {
             null
+        }
+    }
+
+    private suspend fun obtainCoordinates(context: Context): Pair<Double, Double>? {
+        if (!hasLocationPermission(context)) return null
+
+        val last = readBestLastKnownLocation(context)
+        if (last != null && locationAgeMs(last) <= FRESH_LOCATION_MAX_AGE_MS) {
+            return Pair(last.latitude, last.longitude)
+        }
+
+        val fresh = requestFreshLocation(context)
+        if (fresh != null) {
+            return fresh
+        }
+
+        return last?.let { Pair(it.latitude, it.longitude) }
+    }
+
+    private suspend fun requestFreshLocation(context: Context): Pair<Double, Double>? {
+        val lm = try {
+            context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        } catch (_: Exception) {
+            return null
+        }
+
+        val providers = buildList {
+            if (hasFineLocationPermission(context) && lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                add(LocationManager.GPS_PROVIDER)
+            }
+            if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                add(LocationManager.NETWORK_PROVIDER)
+            }
+            if (lm.isProviderEnabled(LocationManager.PASSIVE_PROVIDER)) {
+                add(LocationManager.PASSIVE_PROVIDER)
+            }
+        }
+        if (providers.isEmpty()) return null
+
+        return withTimeoutOrNull(LOCATION_FIX_TIMEOUT_MS) {
+            suspendCancellableCoroutine { cont ->
+                val handlerThread = HandlerThread("fcc-location").also { it.start() }
+                val looper: Looper = handlerThread.looper
+                var completed = false
+                lateinit var listener: LocationListener
+
+                fun finish(result: Pair<Double, Double>?) {
+                    if (completed) return
+                    completed = true
+                    try {
+                        lm.removeUpdates(listener)
+                    } catch (_: Exception) {
+                    }
+                    handlerThread.quitSafely()
+                    if (cont.isActive) {
+                        cont.resume(result)
+                    }
+                }
+
+                listener = object : LocationListener {
+                    override fun onLocationChanged(location: Location) {
+                        finish(Pair(location.latitude, location.longitude))
+                    }
+
+                    override fun onProviderEnabled(provider: String) {}
+                    override fun onProviderDisabled(provider: String) {}
+
+                    @Deprecated("Deprecated in Java")
+                    override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+                }
+
+                cont.invokeOnCancellation {
+                    if (completed) return@invokeOnCancellation
+                    completed = true
+                    try {
+                        lm.removeUpdates(listener)
+                    } catch (_: Exception) {
+                    }
+                    handlerThread.quitSafely()
+                }
+
+                try {
+                    for (provider in providers) {
+                        lm.requestLocationUpdates(provider, 0L, 0f, listener, looper)
+                    }
+                } catch (_: SecurityException) {
+                    finish(null)
+                } catch (_: Exception) {
+                    finish(null)
+                }
+            }
         }
     }
 

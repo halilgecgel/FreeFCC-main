@@ -157,6 +157,48 @@ class MemberAuthApiTest extends TestCase
         $this->assertSame(0, $member->tokens()->count());
     }
 
+    public function test_logout_marks_member_offline(): void
+    {
+        $member = Member::create(['username' => 'halilg', 'password' => 'secret123', 'is_active' => true]);
+        $token = $member->createToken('test')->plainTextToken;
+        $member->markOnline('127.0.0.1');
+
+        $this->assertTrue($member->refresh()->is_online);
+
+        $this->withHeader('Authorization', "Bearer $token")->postJson('/api/v1/logout')->assertOk();
+
+        $this->assertFalse($member->refresh()->is_online);
+        $this->assertFalse($member->isCurrentlyOnline());
+    }
+
+    public function test_heartbeat_after_token_revoke_does_not_mark_online(): void
+    {
+        $member = Member::create(['username' => 'stale', 'password' => 'secret123', 'is_active' => true]);
+        $token = $member->createToken('test')->plainTextToken;
+        $member->markOnline('127.0.0.1');
+
+        $this->withHeader('Authorization', "Bearer $token")->postJson('/api/v1/logout')->assertOk();
+        $this->assertFalse($member->refresh()->is_online);
+
+        $this->withHeader('Authorization', "Bearer $token")
+            ->postJson('/api/v1/heartbeat')
+            ->assertStatus(401);
+
+        $this->assertFalse($member->refresh()->is_online);
+    }
+
+    public function test_stale_heartbeat_is_not_currently_online(): void
+    {
+        $member = Member::create(['username' => 'ghost', 'password' => 'secret123', 'is_active' => true]);
+        $member->forceFill([
+            'is_online' => true,
+            'last_heartbeat_at' => now()->subMinutes(Member::HEARTBEAT_TIMEOUT_MINUTES + 1),
+        ])->save();
+
+        $this->assertFalse($member->isCurrentlyOnline());
+        $this->assertSame(0, Member::query()->currentlyOnline()->count());
+    }
+
     public function test_admin_can_reset_a_members_device_lock(): void
     {
         $member = Member::create(['username' => 'karen', 'password' => 'secret123', 'is_active' => true]);

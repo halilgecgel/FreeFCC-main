@@ -13,10 +13,13 @@ class CheckOfflineMembers extends Command
 
     public function handle(): void
     {
-        $timeout = now()->subMinutes(2);
+        $timeout = now()->subMinutes(Member::HEARTBEAT_TIMEOUT_MINUTES);
 
         $members = Member::where('is_online', true)
-            ->where('last_heartbeat_at', '<', $timeout)
+            ->where(function ($query) use ($timeout) {
+                $query->whereNull('last_heartbeat_at')
+                    ->orWhere('last_heartbeat_at', '<', $timeout);
+            })
             ->get();
 
         foreach ($members as $member) {

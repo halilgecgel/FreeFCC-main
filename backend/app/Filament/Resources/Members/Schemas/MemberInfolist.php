@@ -61,6 +61,7 @@ class MemberInfolist
                                     IconEntry::make('is_online')
                                         ->label('Durum')
                                         ->boolean()
+                                        ->getStateUsing(fn ($record) => $record->isCurrentlyOnline())
                                         ->trueIcon('heroicon-s-signal')
                                         ->falseIcon('heroicon-o-signal-slash')
                                         ->trueColor('success')

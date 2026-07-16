@@ -731,8 +731,8 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
     // --- Updates ---
 
     companion object {
-        const val APP_VERSION = "1.4.8"
-        const val APP_VERSION_CODE = 17
+        const val APP_VERSION = "1.4.9"
+        const val APP_VERSION_CODE = 18
     }
 
     fun checkForUpdates() {

@@ -2,13 +2,12 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\HasApiTokens;
-use Carbon\Carbon;
 
 /**
  * A mobile-app end user (FreeFCC Android app member).
@@ -19,6 +18,9 @@ use Carbon\Carbon;
 class Member extends Model
 {
     use HasApiTokens, HasFactory;
+
+    /** Minutes without a heartbeat before a member is treated as offline. */
+    public const HEARTBEAT_TIMEOUT_MINUTES = 2;
 
     protected $fillable = [
         'name',
@@ -136,6 +138,22 @@ class Member extends Model
         ])->save();
     }
 
+    /** True when the online flag is set and the last heartbeat is still fresh. */
+    public function isCurrentlyOnline(): bool
+    {
+        return $this->is_online
+            && $this->last_heartbeat_at !== null
+            && $this->last_heartbeat_at->gte(now()->subMinutes(self::HEARTBEAT_TIMEOUT_MINUTES));
+    }
+
+    /** Members whose heartbeat has not timed out. */
+    public function scopeCurrentlyOnline(Builder $query): Builder
+    {
+        return $query
+            ->where('is_online', true)
+            ->where('last_heartbeat_at', '>=', now()->subMinutes(self::HEARTBEAT_TIMEOUT_MINUTES));
+    }
+
     /** True once expires_at has passed. Members with no expiry never expire. */
     public function isExpired(): bool
     {
@@ -151,6 +169,8 @@ class Member extends Model
     /** Clears the device lock so the member can log in from a new device. */
     public function resetDevice(): void
     {
+        $this->markOffline();
+
         $this->forceFill([
             'device_id' => null,
             'device_registered_at' => null,

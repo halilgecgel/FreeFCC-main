@@ -24,13 +24,14 @@ class OnlineMembersWidget extends TableWidget
             ->description('Şu anda bağlı olan üyeler')
             ->query(
                 fn (): Builder => Member::query()
-                    ->where('is_online', true)
+                    ->currentlyOnline()
                     ->orderByDesc('last_heartbeat_at')
             )
             ->columns([
                 IconColumn::make('is_online')
                     ->label('')
                     ->boolean()
+                    ->getStateUsing(fn (Member $record): bool => $record->isCurrentlyOnline())
                     ->trueIcon('heroicon-s-signal')
                     ->falseIcon('heroicon-o-signal-slash')
                     ->trueColor('success')

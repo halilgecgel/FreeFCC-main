@@ -116,14 +116,28 @@ class AuthController extends Controller
     public function heartbeat(Request $request)
     {
         $member = $request->user();
+        $token = $member->currentAccessToken();
 
         if (! $member->isUsable()) {
-            $member->currentAccessToken()?->delete();
+            $member->markOffline();
+            $token?->delete();
 
             return $this->error('inactive', 'Hesap kullanılamaz.', 403);
         }
 
+        // Reject if logout already revoked this token (covers in-flight races).
+        if (! $token || ! $member->tokens()->where('id', $token->id)->exists()) {
+            return $this->error('unauthenticated', 'Oturum sonlandırıldı.', 401);
+        }
+
         $member->markOnline($request->ip());
+
+        // Logout may have raced between the existence check and markOnline.
+        if (! $member->tokens()->where('id', $token->id)->exists()) {
+            $member->markOffline();
+
+            return $this->error('unauthenticated', 'Oturum sonlandırıldı.', 401);
+        }
 
         return response()->json(['status' => 'ok']);
     }
@@ -138,8 +152,9 @@ class AuthController extends Controller
     public function logout(Request $request)
     {
         $member = $request->user();
-        $member->markOffline();
+        // Revoke first so concurrent heartbeats fail the token-exists check.
         $member->currentAccessToken()?->delete();
+        $member->markOffline();
 
         return response()->json(['status' => 'ok']);
     }
