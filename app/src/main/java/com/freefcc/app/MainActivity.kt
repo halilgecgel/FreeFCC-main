@@ -1909,18 +1909,6 @@ private fun SupportPage(member: MemberInfo, onLogout: () -> Unit) {
 
 @Composable
 private fun AppHeader(model: String) {
-    val glow = rememberInfiniteTransition(label = "hdr")
-    val glowAlpha by glow.animateFloat(
-        0.5f, 1f,
-        infiniteRepeatable(tween(2400, easing = EaseInOutSine), RepeatMode.Reverse),
-        label = "hdrGlow"
-    )
-    val accentShift by glow.animateFloat(
-        0f, 1f,
-        infiniteRepeatable(tween(4000, easing = EaseInOutSine), RepeatMode.Reverse),
-        label = "hdrAccent"
-    )
-
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             contentAlignment = Alignment.Center,
@@ -1932,8 +1920,8 @@ private fun AppHeader(model: String) {
                     .background(
                         Brush.radialGradient(
                             listOf(
-                                Cyan.copy(glowAlpha * 0.15f),
-                                Purple.copy(glowAlpha * 0.06f),
+                                Cyan.copy(0.12f),
+                                Purple.copy(0.05f),
                                 Color.Transparent
                             ),
                             radius = 200f
@@ -1942,12 +1930,7 @@ private fun AppHeader(model: String) {
             )
             Text(
                 "DJI FCC Mod",
-                color = Color(
-                    red = Cyan.red * (1f - accentShift * 0.3f) + Purple.red * accentShift * 0.3f,
-                    green = Cyan.green * (1f - accentShift * 0.2f),
-                    blue = Cyan.blue,
-                    alpha = glowAlpha
-                ),
+                color = Cyan,
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Black,
                 letterSpacing = 2.sp
@@ -2005,13 +1988,6 @@ private fun ConnectionPill(state: AppState) {
         }
     }
 
-    // Pulsing glow when connected
-    val glowAlpha: Float = if (state.isConnected) {
-        val t = rememberInfiniteTransition(label = "pill")
-        val a by t.animateFloat(0.1f, 0.25f, infiniteRepeatable(tween(1800), RepeatMode.Reverse), label = "pillGlow")
-        a
-    } else 0f
-
     Surface(
         color = color.copy(0.1f),
         shape = CircleShape,
@@ -2020,8 +1996,8 @@ private fun ConnectionPill(state: AppState) {
             .padding(4.dp)
             .scale(bounce.value)
             .drawBehind {
-                if (glowAlpha > 0f) {
-                    drawCircle(color.copy(glowAlpha), radius = size.maxDimension * 0.75f)
+                if (state.isConnected) {
+                    drawCircle(color.copy(0.15f), radius = size.maxDimension * 0.75f)
                 }
             }
     ) {
@@ -2199,12 +2175,10 @@ private fun DividerLine(alpha: Float = 0.5f) {
 
 @Composable
 private fun StatusDot(color: Color) {
-    val pulse = rememberInfiniteTransition(label = "dot")
-    val alpha by pulse.animateFloat(0.5f, 1f, infiniteRepeatable(tween(1200), RepeatMode.Reverse), label = "dotPulse")
     Box(
         modifier = Modifier
             .size(10.dp)
-            .background(color.copy(alpha), CircleShape)
+            .background(color, CircleShape)
     )
 }
 
@@ -2273,26 +2247,37 @@ private fun GlowButton(
 
 @Composable
 private fun SignalWaveIcon(active: Boolean, color: Color, modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "wave")
-    val phase by transition.animateFloat(
-        0f, (2 * PI).toFloat(),
-        infiniteRepeatable(tween(1200, easing = LinearEasing), RepeatMode.Restart),
-        label = "wavePhase"
-    )
+    if (active) {
+        val transition = rememberInfiniteTransition(label = "wave")
+        val phase by transition.animateFloat(
+            0f, (2 * PI).toFloat(),
+            infiniteRepeatable(tween(1200, easing = LinearEasing), RepeatMode.Restart),
+            label = "wavePhase"
+        )
+        SignalWaveCanvas(phase = phase, amplitudeFactor = 0.25f, color = color, modifier = modifier)
+    } else {
+        SignalWaveCanvas(phase = 0f, amplitudeFactor = 0.08f, color = color.copy(0.35f), modifier = modifier)
+    }
+}
 
+@Composable
+private fun SignalWaveCanvas(
+    phase: Float,
+    amplitudeFactor: Float,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
     Canvas(modifier = modifier) {
         val w = size.width
         val h = size.height
         val centerY = h / 2
-        val amplitude = if (active) h * 0.25f else h * 0.08f
-        val lineColor = if (active) color else color.copy(0.35f)
-
+        val amplitude = h * amplitudeFactor
         val path = androidx.compose.ui.graphics.Path()
         for (x in 0..w.toInt() step 2) {
             val y = centerY + amplitude * sin((x / w).toDouble() * 2.0 * PI + phase.toDouble()).toFloat()
             if (x == 0) path.moveTo(x.toFloat(), y) else path.lineTo(x.toFloat(), y)
         }
-        drawPath(path, lineColor, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
+        drawPath(path, color, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
     }
 }
 

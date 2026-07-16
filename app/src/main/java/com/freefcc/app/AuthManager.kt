@@ -2,6 +2,7 @@ package com.freefcc.app
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.SharedPreferences
 import android.provider.Settings
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -19,13 +20,28 @@ object AuthManager {
     private const val KEY_NAME = "name"
     private const val KEY_EXPIRES_AT = "expires_at"
 
-    private fun prefs(context: Context) = EncryptedSharedPreferences.create(
-        context,
-        PREFS_NAME,
-        MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    @Volatile
+    private var cachedPrefs: SharedPreferences? = null
+    private val prefsLock = Any()
+
+    /** Creating EncryptedSharedPreferences + MasterKey is expensive — cache one instance. */
+    private fun prefs(context: Context): SharedPreferences {
+        cachedPrefs?.let { return it }
+        synchronized(prefsLock) {
+            cachedPrefs?.let { return it }
+            val created = EncryptedSharedPreferences.create(
+                context.applicationContext,
+                PREFS_NAME,
+                MasterKey.Builder(context.applicationContext)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build(),
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+            cachedPrefs = created
+            return created
+        }
+    }
 
     fun getToken(context: Context): String? =
         prefs(context).getString(KEY_TOKEN, null)

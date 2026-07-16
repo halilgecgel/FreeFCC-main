@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -80,6 +81,7 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private val transport = DumlTransport()
     private val prefs = app.getSharedPreferences("freefcc", Context.MODE_PRIVATE)
+    private var lastBusyProgressEmitMs = 0L
 
     init {
         // MainActivity.onCreate() calls init() below on every Activity re-creation
@@ -191,7 +193,7 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                     interRoundDelayMs = profile.interRoundDelay,
                     readWindowMs = profile.readWindowMs,
                     port = profile.port
-                ) { progress -> update { copy(busyProgress = progress) } }
+                ) { progress -> emitBusyProgress(progress) }
 
                 if (success) {
                     update {
@@ -332,7 +334,7 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                     interRoundDelayMs = profile.interRoundDelay,
                     readWindowMs = profile.readWindowMs,
                     port = profile.port
-                ) { progress -> update { copy(busyProgress = progress) } }
+                ) { progress -> emitBusyProgress(progress) }
 
                 if (success) {
                     update {
@@ -538,7 +540,7 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                 val success = transport.sendFramesUnix(
                     frames = profile.frames,
                     interFrameDelayMs = profile.interFrameDelay
-                ) { progress -> update { copy(busyProgress = progress) } }
+                ) { progress -> emitBusyProgress(progress) }
 
                 if (success) {
                     update {
@@ -790,7 +792,7 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
 
         runOnIO {
             when (val result = UpdateChecker.downloadApk(app, info) { progress ->
-                update { copy(updateDownloadProgress = progress) }
+                emitDownloadProgress(progress)
             }) {
                 is UpdateChecker.DownloadResult.Err -> {
                     update { copy(isDownloadingUpdate = false, updateDownloadProgress = 0f) }
@@ -1032,6 +1034,21 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
         _state.value = _state.value.block()
     }
 
+    /** Caps progress StateFlow spam (~10 Hz) so Compose is not flooded mid-send. */
+    private fun emitBusyProgress(progress: Float) {
+        val now = SystemClock.elapsedRealtime()
+        if (progress < 1f && now - lastBusyProgressEmitMs < 100L) return
+        lastBusyProgressEmitMs = now
+        update { copy(busyProgress = progress) }
+    }
+
+    private fun emitDownloadProgress(progress: Float) {
+        val now = SystemClock.elapsedRealtime()
+        if (progress < 1f && now - lastBusyProgressEmitMs < 100L) return
+        lastBusyProgressEmitMs = now
+        update { copy(updateDownloadProgress = progress) }
+    }
+
     /** Adds a timestamped entry to the activity log (most recent first, max 50) and queues server upload. */
     private fun log(message: String) {
         val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
@@ -1058,11 +1075,11 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                 failureReason = failureReason,
                 aircraftSerial = aircraftSerial
             )
-            // trackActivity already queued inside sendFccSession — only mirror to UI panel
-            for (note in notes) {
+            // trackActivity already queued inside sendFccSession — batch UI log once
+            if (notes.isNotEmpty()) {
                 val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
-                val entry = "[$time] $note"
-                update { copy(logMessages = (listOf(entry) + logMessages).take(80)) }
+                val entries = notes.map { "[$time] $it" }
+                update { copy(logMessages = (entries + logMessages).take(80)) }
             }
         } catch (e: Exception) {
             log("Uçuş bildirimi gönderilemedi: ${e.message}")

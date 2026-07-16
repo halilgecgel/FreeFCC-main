@@ -20,11 +20,17 @@ object HardwareLock {
     private val held = java.util.concurrent.atomic.AtomicBoolean(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
 
-    /** Claims the lock for one operation. Returns false if another is already running. */
-    fun tryBegin(): Boolean {
+    /**
+     * Claims the lock for one operation. Returns false if another is already running.
+     *
+     * @param notifyUi When false (keepalive ticks), the mutex still serializes
+     *  writes but [busy] is left unchanged so Compose does not recompose every
+     *  ~2s. UI-triggered ops should keep the default true.
+     */
+    fun tryBegin(notifyUi: Boolean = true): Boolean {
         if (!mutex.tryLock()) return false
         held.set(true)
-        _busy.value = true
+        if (notifyUi) _busy.value = true
         return true
     }
 
@@ -34,7 +40,7 @@ object HardwareLock {
     fun end() {
         if (!held.get()) return
         held.set(false)
-        _busy.value = false
+        if (_busy.value) _busy.value = false
         mutex.unlock()
     }
 }

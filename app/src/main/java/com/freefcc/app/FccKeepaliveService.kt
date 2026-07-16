@@ -129,7 +129,8 @@ class FccKeepaliveService : Service() {
                 // INTERVAL_MS regardless of how long the send takes. The first
                 // tick fires immediately (no delay before the first send).
                 delay(INTERVAL_MS)
-                if (HardwareLock.tryBegin()) {
+                // Silent lock: serialize DUML writes without flipping UI busy every 2s.
+                if (HardwareLock.tryBegin(notifyUi = false)) {
                     try {
                         val ok = transport.sendFrames(
                             frames = frames,

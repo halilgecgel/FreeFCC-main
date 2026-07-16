@@ -486,6 +486,9 @@ object TelemetryCollector {
     /** Call early (permission grant / onResume) so flight start has a warm GPS cache. */
     fun prefetchLocation(context: Context) {
         if (!hasLocationPermission(context)) return
+        // Skip work when memory cache is still fresh — onResume used to spawn a
+        // GPS thread on every foregrounding.
+        if (readCachedCoords() != null) return
         Thread {
             try {
                 kotlinx.coroutines.runBlocking {
