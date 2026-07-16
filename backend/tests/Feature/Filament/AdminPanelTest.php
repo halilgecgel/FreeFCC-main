@@ -81,4 +81,35 @@ class AdminPanelTest extends TestCase
             ->assertSuccessful()
             ->assertSee('someone');
     }
+
+    public function test_whatsapp_page_renders_when_not_configured(): void
+    {
+        config(['services.evolution.url' => '', 'services.evolution.key' => '']);
+
+        $this->actingAs($this->admin())
+            ->get('/admin/whats-app')
+            ->assertSuccessful()
+            ->assertSee('Evolution API yapılandırılmamış');
+    }
+
+    public function test_whatsapp_page_renders_when_configured(): void
+    {
+        config([
+            'services.evolution.url' => 'http://127.0.0.1:18080',
+            'services.evolution.key' => 'test-key',
+            'services.evolution.instance' => 'freefcc-test',
+        ]);
+
+        \Illuminate\Support\Facades\Http::fake([
+            '*/instance/connectionState/*' => \Illuminate\Support\Facades\Http::response([
+                'instance' => ['instanceName' => 'freefcc-test', 'state' => 'close'],
+            ]),
+        ]);
+
+        $this->actingAs($this->admin())
+            ->get('/admin/whats-app')
+            ->assertSuccessful()
+            ->assertSee('freefcc-test')
+            ->assertSee('Bağlan / QR Kod Oluştur');
+    }
 }
