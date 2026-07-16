@@ -596,6 +596,16 @@ private fun AppRoot(viewModel: FccViewModel) {
         }
     }
 
+    // Heartbeat: her 60 saniyede sunucuya sinyal gönder (online takibi)
+    LaunchedEffect(authState) {
+        if (authState !is AuthUiState.LoggedIn) return@LaunchedEffect
+        while (true) {
+            val token = AuthManager.getToken(context) ?: break
+            withContext(Dispatchers.IO) { AuthApi.heartbeat(token) }
+            delay(60_000L)
+        }
+    }
+
     val onLogout: () -> Unit = {
         val token = AuthManager.getToken(context)
         AuthManager.clearSession(context)

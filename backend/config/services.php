@@ -41,4 +41,18 @@ return [
         'instance' => env('EVOLUTION_API_INSTANCE', 'freefcc'),
     ],
 
+    'sms' => [
+        'provider' => env('SMS_PROVIDER', 'log'),
+        'netgsm' => [
+            'usercode' => env('NETGSM_USERCODE'),
+            'password' => env('NETGSM_PASSWORD'),
+            'header' => env('NETGSM_HEADER', 'FREEFCC'),
+        ],
+        'vatansms' => [
+            'api_id' => env('VATANSMS_API_ID'),
+            'api_key' => env('VATANSMS_API_KEY'),
+            'sender' => env('VATANSMS_SENDER', 'FREEFCC'),
+        ],
+    ],
+
 ];

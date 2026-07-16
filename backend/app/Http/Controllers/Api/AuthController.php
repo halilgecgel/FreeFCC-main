@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\LoginLog;
 use App\Models\Member;
+use App\Models\MemberActivityLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
@@ -73,6 +74,8 @@ class AuthController extends Controller
             'app_version' => $data['app_version'] ?? $member->app_version,
         ])->save();
 
+        $member->markOnline($request->ip());
+
         $this->logAttempt($member, $data, true, 'ok');
 
         return response()->json([
@@ -110,9 +113,26 @@ class AuthController extends Controller
         ]);
     }
 
+    public function heartbeat(Request $request)
+    {
+        $member = $request->user();
+
+        if (! $member->isUsable()) {
+            $member->currentAccessToken()?->delete();
+
+            return $this->error('inactive', 'Hesap kullanılamaz.', 403);
+        }
+
+        $member->markOnline($request->ip());
+
+        return response()->json(['status' => 'ok']);
+    }
+
     public function logout(Request $request)
     {
-        $request->user()->currentAccessToken()?->delete();
+        $member = $request->user();
+        $member->markOffline();
+        $member->currentAccessToken()?->delete();
 
         return response()->json(['status' => 'ok']);
     }

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\HasApiTokens;
+use Carbon\Carbon;
 
 /**
  * A mobile-app end user (FreeFCC Android app member).
@@ -22,6 +23,7 @@ class Member extends Model
     protected $fillable = [
         'name',
         'username',
+        'phone',
         'password',
         'is_active',
         'expires_at',
@@ -30,6 +32,9 @@ class Member extends Model
         'last_login_at',
         'last_login_ip',
         'app_version',
+        'is_online',
+        'last_heartbeat_at',
+        'total_online_seconds',
         'notes',
     ];
 
@@ -41,9 +46,11 @@ class Member extends Model
     {
         return [
             'is_active' => 'boolean',
+            'is_online' => 'boolean',
             'expires_at' => 'datetime',
             'device_registered_at' => 'datetime',
             'last_login_at' => 'datetime',
+            'last_heartbeat_at' => 'datetime',
             'password' => 'hashed',
         ];
     }
@@ -51,6 +58,57 @@ class Member extends Model
     public function loginLogs(): HasMany
     {
         return $this->hasMany(LoginLog::class);
+    }
+
+    public function activityLogs(): HasMany
+    {
+        return $this->hasMany(MemberActivityLog::class);
+    }
+
+    public function markOnline(string $ip = null): void
+    {
+        $now = now();
+
+        if (! $this->is_online) {
+            MemberActivityLog::create([
+                'member_id' => $this->id,
+                'event' => 'online',
+                'started_at' => $now,
+                'ip_address' => $ip,
+            ]);
+        }
+
+        $this->forceFill([
+            'is_online' => true,
+            'last_heartbeat_at' => $now,
+        ])->save();
+    }
+
+    public function markOffline(): void
+    {
+        if (! $this->is_online) {
+            return;
+        }
+
+        $lastLog = $this->activityLogs()
+            ->where('event', 'online')
+            ->whereNull('ended_at')
+            ->latest()
+            ->first();
+
+        $duration = 0;
+        if ($lastLog) {
+            $duration = (int) $lastLog->started_at->diffInSeconds(now());
+            $lastLog->update([
+                'ended_at' => now(),
+                'duration_seconds' => $duration,
+            ]);
+        }
+
+        $this->forceFill([
+            'is_online' => false,
+            'total_online_seconds' => $this->total_online_seconds + $duration,
+        ])->save();
     }
 
     /** True once expires_at has passed. Members with no expiry never expire. */

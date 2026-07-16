@@ -39,7 +39,7 @@ class MemberResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            RelationManagers\ActivityLogsRelationManager::class,
         ];
     }
 

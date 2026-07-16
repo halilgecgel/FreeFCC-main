@@ -18,12 +18,23 @@ class MembersTable
     {
         return $table
             ->columns([
+                IconColumn::make('is_online')
+                    ->label('Çevrimiçi')
+                    ->boolean()
+                    ->trueIcon('heroicon-s-signal')
+                    ->falseIcon('heroicon-o-signal-slash')
+                    ->trueColor('success')
+                    ->falseColor('danger'),
                 TextColumn::make('username')
                     ->label('Kullanıcı Adı')
                     ->searchable()
                     ->sortable(),
                 TextColumn::make('name')
                     ->label('Ad Soyad')
+                    ->searchable()
+                    ->toggleable(),
+                TextColumn::make('phone')
+                    ->label('Telefon')
                     ->searchable()
                     ->toggleable(),
                 TextColumn::make('status_label')
@@ -43,6 +54,20 @@ class MembersTable
                     ->dateTime('d.m.Y H:i')
                     ->placeholder('Süresiz')
                     ->sortable(),
+                TextColumn::make('last_heartbeat_at')
+                    ->label('Son Sinyal')
+                    ->since()
+                    ->placeholder('Hiç bağlanmadı')
+                    ->sortable(),
+                TextColumn::make('total_online_seconds')
+                    ->label('Toplam Kullanım')
+                    ->formatStateUsing(function ($state) {
+                        if (! $state) return '—';
+                        $hours = intdiv($state, 3600);
+                        $minutes = intdiv($state % 3600, 60);
+                        return "{$hours}s {$minutes}dk";
+                    })
+                    ->sortable(),
                 TextColumn::make('last_login_at')
                     ->label('Son Giriş')
                     ->dateTime('d.m.Y H:i')
@@ -58,7 +83,11 @@ class MembersTable
             ->filters([
                 TernaryFilter::make('is_active')
                     ->label('Aktif mi?'),
+                TernaryFilter::make('is_online')
+                    ->label('Çevrimiçi mi?'),
             ])
+            ->defaultSort('is_online', 'desc')
+            ->poll('10s')
             ->recordActions([
                 Action::make('resetDevice')
                     ->label('Cihazı Sıfırla')

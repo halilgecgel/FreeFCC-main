@@ -100,6 +100,17 @@ object AuthApi {
         return AuthResult.Failure(parseError(json))
     }
 
+    /** Sends a heartbeat to keep the member marked as online on the server. */
+    fun heartbeat(token: String): Boolean {
+        return try {
+            val (code, _) = request("POST", "/heartbeat", body = null, token = token)
+                ?: return false
+            code == 200
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     /** Revokes the current token server-side. Best-effort — ignore failures, we log out locally regardless. */
     fun logout(token: String) {
         try {
