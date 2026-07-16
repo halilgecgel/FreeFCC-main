@@ -99,8 +99,6 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
     fun init() {
         val model = try { Build.DEVICE } catch (_: Exception) { "unknown" }
         val autoEnabled = prefs.getBoolean("auto_fcc", false)
-        // Sync the keepalive toggle with the persistent flag so the UI is
-        // correct after a process restart (e.g. low-memory kill + sticky restart).
         val keepaliveRunning = FccKeepaliveService.isRunningFlagSet(app)
         update { copy(controllerModel = model, status = "disconnected", autoFcc = autoEnabled, isKeepaliveRunning = keepaliveRunning) }
 
@@ -111,6 +109,16 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
 
         checkForUpdates()
         startNotificationPolling()
+        startTelemetryFlush()
+    }
+
+    private fun startTelemetryFlush() {
+        runOnIO {
+            while (true) {
+                delay(60_000)
+                try { TelemetryCollector.flushFeatureEvents(app) } catch (_: Exception) {}
+            }
+        }
     }
 
     // --- Auto-FCC ---
@@ -125,6 +133,7 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean("auto_fcc", newValue).apply()
         update { copy(autoFcc = newValue) }
         log(if (newValue) "Otomatik FCC etkin — bir sonraki açılışta otomatik bağlanacak" else "Otomatik FCC devre dışı")
+        TelemetryCollector.trackFeature("auto_fcc_toggle", true, mapOf("enabled" to newValue))
     }
 
     /**
@@ -147,6 +156,8 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                 if (!transport.connect()) {
                     log("Otomatik FCC: kumanda bulunamadı — drone açık mı?")
                     update { copy(status = "disconnected", message = "Kumanda bulunamadı. Bağlan'a dokunduğunuzda Otomatik FCC tekrar deneyecek.") }
+                    TelemetryCollector.trackFeature("auto_fcc", false)
+                    try { TelemetryCollector.sendFccSession(app, "auto_fcc", false, failureReason = "connect_failed") } catch (_: Exception) {}
                     return@runOnIO
                 }
 
@@ -193,12 +204,20 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                         )
                     }
                     log("Otomatik FCC: FCC modu etkinleştirildi")
+                    TelemetryCollector.markFccStart()
+                    TelemetryCollector.trackFeature("auto_fcc", true)
+                    try {
+                        TelemetryCollector.sendFccSession(app, "auto_fcc", true, aircraftSerial = serial)
+                        TelemetryCollector.sendDeviceTelemetry(app, aircraftSerial = serial, detectedPort = detectedPort)
+                    } catch (_: Exception) {}
 
                     // Auto-start keepalive
                     delay(500)
                     update { copy(isKeepaliveRunning = true) }
                     FccKeepaliveService.start(app)
                     log("Otomatik FCC: canlı tutma başlatıldı (her 2 saniyede yeniden uygulanıyor)")
+                    TelemetryCollector.trackFeature("keepalive_start", true)
+                    try { TelemetryCollector.sendFccSession(app, "keepalive_start", true, aircraftSerial = serial) } catch (_: Exception) {}
 
                     // Auto-launch DJI Fly
                     delay(500)
@@ -215,10 +234,13 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                         )
                     }
                     log("Otomatik FCC: uygulama başarısız — manuel deneyin")
+                    TelemetryCollector.trackFeature("auto_fcc", false)
+                    try { TelemetryCollector.sendFccSession(app, "auto_fcc", false, failureReason = "write_failed", aircraftSerial = serial) } catch (_: Exception) {}
                 }
             } catch (e: Exception) {
                 log("Otomatik FCC hatası: ${e.message}")
                 update { copy(status = "disconnected", message = "Otomatik FCC hatası: ${e.message}", isBusy = false, busyProgress = 0f) }
+                try { TelemetryCollector.sendErrorLog(app, "fcc", "Otomatik FCC hatası: ${e.message}", e.stackTraceToString(), "autoConnectAndApply") } catch (_: Exception) {}
             } finally {
                 endHardwareOp()
             }
@@ -241,7 +263,9 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
 
         runOnIO {
             try {
+                val connectStart = System.currentTimeMillis()
                 if (transport.connect()) {
+                    val connectTimeMs = (System.currentTimeMillis() - connectStart).toInt()
                     log("Kumandaya bağlandı")
                     val detectedPort = transport.getDetectedPort()
                     if (detectedPort > 0) {
@@ -257,6 +281,12 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                         )
                     }
                     if (serial.isNotEmpty()) log("Uçak seri no: $serial")
+
+                    TelemetryCollector.trackFeature("connect", true, mapOf("port" to detectedPort))
+                    try {
+                        TelemetryCollector.sendConnectionMetrics(app, connectTimeMs = connectTimeMs, portUsed = detectedPort)
+                        TelemetryCollector.sendDeviceTelemetry(app, aircraftSerial = serial, detectedPort = detectedPort)
+                    } catch (_: Exception) {}
                 } else {
                     update {
                         copy(
@@ -266,6 +296,8 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                         )
                     }
                     log("Bağlantı başarısız — drone açık mı?")
+                    TelemetryCollector.trackFeature("connect", false)
+                    TelemetryCollector.incrementDisconnections()
                 }
             } finally {
                 endHardwareOp()
@@ -313,6 +345,9 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                         )
                     }
                     log("FCC modu etkinleştirildi — ${profile.frames.size} çerçeve gönderildi")
+                    TelemetryCollector.markFccStart()
+                    TelemetryCollector.trackFeature("fcc_enable", true)
+                    try { TelemetryCollector.sendFccSession(app, "fcc_enable", true, aircraftSerial = _state.value.aircraftSerial) } catch (_: Exception) {}
                 } else {
                     update {
                         copy(
@@ -323,10 +358,13 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                         )
                     }
                     log("FCC uygulaması başarısız — yazma işlemi başarısız")
+                    TelemetryCollector.trackFeature("fcc_enable", false)
+                    try { TelemetryCollector.sendFccSession(app, "fcc_enable", false, failureReason = "write_failed") } catch (_: Exception) {}
                 }
             } catch (e: Exception) {
                 log("FCC uygulama hatası: ${e.message}")
                 update { copy(status = "connected", message = "FCC uygulama hatası: ${e.message}", isBusy = false, busyProgress = 0f) }
+                try { TelemetryCollector.sendErrorLog(app, "fcc", "FCC uygulama hatası: ${e.message}", e.stackTraceToString(), "enableFcc") } catch (_: Exception) {}
             } finally {
                 endHardwareOp()
             }
@@ -359,13 +397,18 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                 if (success) {
                     update { copy(status = "connected", message = "CE modu geri yüklendi", isFccEnabled = false, isBusy = false) }
                     log("CE modu geri yüklendi")
+                    TelemetryCollector.trackFeature("fcc_disable", true)
+                    try { TelemetryCollector.sendFccSession(app, "fcc_disable", true, aircraftSerial = _state.value.aircraftSerial) } catch (_: Exception) {}
                 } else {
                     update { copy(status = "connected", message = "CE geri yükleme başarısız — RC bağlantısı yok", isBusy = false) }
                     log("CE geri yükleme başarısız")
+                    TelemetryCollector.trackFeature("fcc_disable", false)
+                    try { TelemetryCollector.sendFccSession(app, "fcc_disable", false, failureReason = "write_failed") } catch (_: Exception) {}
                 }
             } catch (e: Exception) {
                 log("CE geri yükleme hatası: ${e.message}")
                 update { copy(status = "connected", message = "CE geri yükleme hatası: ${e.message}", isBusy = false) }
+                try { TelemetryCollector.sendErrorLog(app, "fcc", "CE geri yükleme hatası: ${e.message}", e.stackTraceToString(), "disableFcc") } catch (_: Exception) {}
             } finally {
                 endHardwareOp()
             }
@@ -388,6 +431,8 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
         update { copy(isKeepaliveRunning = true) }
         FccKeepaliveService.start(app)
         log("FCC canlı tutma başlatıldı — CE sıfırlamasını önlemek için her 2 saniyede yeniden uygulanıyor")
+        TelemetryCollector.trackFeature("keepalive_start", true)
+        runOnIO { try { TelemetryCollector.sendFccSession(app, "keepalive_start", true, aircraftSerial = _state.value.aircraftSerial) } catch (_: Exception) {} }
     }
 
     /** Stops the keepalive foreground service. */
@@ -395,6 +440,8 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
         FccKeepaliveService.stop(app)
         update { copy(isKeepaliveRunning = false) }
         log("FCC canlı tutma durduruldu")
+        TelemetryCollector.trackFeature("keepalive_stop", true)
+        runOnIO { try { TelemetryCollector.sendFccSession(app, "keepalive_stop", true, aircraftSerial = _state.value.aircraftSerial) } catch (_: Exception) {} }
     }
 
     // --- Launch DJI Fly ---
@@ -413,6 +460,7 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
             try {
                 app.startActivity(intent)
                 log("DJI Fly başlatıldı")
+                TelemetryCollector.trackFeature("dji_fly_launch", true, mapOf("package" to "dji.go.v5"))
                 return
             } catch (_: Exception) {}
         }
@@ -431,6 +479,7 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
             try {
                 app.startActivity(explicitIntent)
                 log("DJI Fly başlatıldı")
+                TelemetryCollector.trackFeature("dji_fly_launch", true, mapOf("activity" to activityName))
                 return
             } catch (_: Exception) {}
         }
@@ -442,11 +491,13 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
             try {
                 app.startActivity(intent)
                 log("DJI Go 4 başlatıldı")
+                TelemetryCollector.trackFeature("dji_fly_launch", true, mapOf("package" to "dji.go.v4"))
                 return
             } catch (_: Exception) {}
         }
 
         log("DJI Fly yüklü değil veya bu kumandada başlatılamıyor")
+        TelemetryCollector.trackFeature("dji_fly_launch", false)
     }
 
     // --- 4G ---
@@ -497,13 +548,16 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                         )
                     }
                     log("4G etkinleştirme: tüm ${profile.frames.size} çerçeve Unix soketi üzerinden başarıyla yazıldı")
+                    TelemetryCollector.trackFeature("4g_activate", true, mapOf("serial" to serial))
                 } else {
                     update { copy(is4gBusy = false, fourGMessage = "4G uygulaması başarısız — 4G dongle bağlı mı?") }
                     log("4G etkinleştirme başarısız — Unix soketinde en az bir çerçeve yazılamadı")
+                    TelemetryCollector.trackFeature("4g_activate", false)
                 }
             } catch (e: Exception) {
                 log("4G etkinleştirme hatası: ${e.message}")
                 update { copy(is4gBusy = false, fourGMessage = "4G hatası: ${e.message}") }
+                try { TelemetryCollector.sendErrorLog(app, "4g", "4G hatası: ${e.message}", e.stackTraceToString(), "send4g") } catch (_: Exception) {}
             } finally {
                 endHardwareOp()
             }
@@ -554,16 +608,20 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                     if (success) anySuccess = true
                 }
 
+                val featureName = if (on) "led_on" else "led_off"
                 if (anySuccess) {
                     update { copy(isLedBusy = false, ledStatus = if (on) "AÇIK" else "KAPALI") }
                     log(if (on) "LED'ler açıldı" else "LED'ler kapatıldı")
+                    TelemetryCollector.trackFeature(featureName, true)
                 } else {
                     update { copy(isLedBusy = false, ledStatus = "Başarısız — DJI Fly çalışıyor mu?") }
                     log("LED komutu başarısız — DJI Fly'ın uçak bağlıyken çalıştığından emin olun")
+                    TelemetryCollector.trackFeature(featureName, false)
                 }
             } catch (e: Exception) {
                 log("LED hatası: ${e.message}")
                 update { copy(isLedBusy = false, ledStatus = "Hata: ${e.message}") }
+                try { TelemetryCollector.sendErrorLog(app, "led", "LED hatası: ${e.message}", e.stackTraceToString(), "setLed") } catch (_: Exception) {}
             } finally {
                 endHardwareOp()
             }
@@ -597,20 +655,52 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                 }
                 val frame = profile.frames.first()
 
+                val latencyStart = System.currentTimeMillis()
                 val response = transport.sendAndReceive(frame, profile.readWindowMs)
+                val commandLatencyMs = (System.currentTimeMillis() - latencyStart).toInt()
 
                 if (response == null || response.isEmpty()) {
                     update { copy(isQueryingInfo = false, deviceInfo = "Kumandadan yanıt alınamadı") }
                     log("Cihaz bilgisi: yanıt yok")
+                    TelemetryCollector.trackFeature("device_info", false)
+                    try {
+                        TelemetryCollector.sendConnectionMetrics(
+                            app,
+                            commandLatencyMs = commandLatencyMs,
+                            portUsed = transport.getDetectedPort()
+                        )
+                    } catch (_: Exception) {}
                     return@runOnIO
                 }
 
                 val info = formatVersionResponse(response)
                 update { copy(isQueryingInfo = false, deviceInfo = info) }
                 log("Cihaz bilgisi alındı: ${response.size} bayt")
+                TelemetryCollector.trackFeature("device_info", true)
+
+                val fwVersion = if (response.size >= 26) formatVersion(readUInt32LE(response, 22)) else null
+                val hwVersion = if (response.size >= 18) String(response, 2, 16, Charsets.US_ASCII).trimEnd('\u0000') else null
+                val blVersion = if (response.size >= 22) formatVersion(readUInt32LE(response, 18)) else null
+                try {
+                    TelemetryCollector.sendConnectionMetrics(
+                        app,
+                        commandLatencyMs = commandLatencyMs,
+                        portUsed = transport.getDetectedPort()
+                    )
+                    TelemetryCollector.sendDeviceTelemetry(
+                        app,
+                        firmwareVersion = fwVersion,
+                        hardwareVersion = hwVersion,
+                        bootloaderVersion = blVersion,
+                        aircraftSerial = _state.value.aircraftSerial,
+                        detectedPort = transport.getDetectedPort()
+                    )
+                } catch (_: Exception) {}
             } catch (e: Exception) {
                 log("Cihaz bilgisi hatası: ${e.message}")
                 update { copy(isQueryingInfo = false, deviceInfo = "Hata: ${e.message}") }
+                TelemetryCollector.trackFeature("device_info", false)
+                try { TelemetryCollector.sendErrorLog(app, "duml", "Cihaz bilgisi hatası: ${e.message}", e.stackTraceToString(), "queryDeviceInfo") } catch (_: Exception) {}
             } finally {
                 endHardwareOp()
             }

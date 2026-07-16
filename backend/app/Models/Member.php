@@ -65,6 +65,31 @@ class Member extends Model
         return $this->hasMany(MemberActivityLog::class);
     }
 
+    public function deviceTelemetry(): HasMany
+    {
+        return $this->hasMany(DeviceTelemetry::class);
+    }
+
+    public function fccSessions(): HasMany
+    {
+        return $this->hasMany(FccSession::class);
+    }
+
+    public function featureUsageLogs(): HasMany
+    {
+        return $this->hasMany(FeatureUsageLog::class);
+    }
+
+    public function errorLogs(): HasMany
+    {
+        return $this->hasMany(ErrorLog::class);
+    }
+
+    public function connectionMetrics(): HasMany
+    {
+        return $this->hasMany(ConnectionMetric::class);
+    }
+
     public function markOnline(string $ip = null): void
     {
         $now = now();

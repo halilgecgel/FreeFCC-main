@@ -300,9 +300,14 @@ class DumlTransport {
             val remaining = readBytes(input, totalLength - 11) ?: return null
             val response = header + remaining
 
-            return DumlBuilder.validateResponse(frame, response)
+            val validated = DumlBuilder.validateResponse(frame, response)
+            if (validated == null) {
+                TelemetryCollector.incrementCrcErrors()
+            }
+            return validated
 
         } catch (_: IOException) {
+            TelemetryCollector.incrementDisconnections()
             return null
         } finally {
             try { socket?.close() } catch (_: IOException) {}

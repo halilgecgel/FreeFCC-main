@@ -47,6 +47,9 @@ class MemberResource extends Resource
     {
         return [
             RelationManagers\ActivityLogsRelationManager::class,
+            RelationManagers\FccSessionsRelationManager::class,
+            RelationManagers\DeviceTelemetryRelationManager::class,
+            RelationManagers\ErrorLogsRelationManager::class,
         ];
     }
 

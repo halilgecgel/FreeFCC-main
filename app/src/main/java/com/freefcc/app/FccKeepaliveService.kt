@@ -131,16 +131,32 @@ class FccKeepaliveService : Service() {
                 delay(INTERVAL_MS)
                 if (HardwareLock.tryBegin()) {
                     try {
-                        transport.sendFrames(
+                        val ok = transport.sendFrames(
                             frames = frames,
                             rounds = 1,
                             interFrameDelayMs = cachedInterFrameDelay,
                             readWindowMs = cachedReadWindowMs,
                             port = cachedPort
                         )
+                        if (ok) {
+                            TelemetryCollector.incrementKeepaliveCount()
+                            TelemetryCollector.incrementCeResetBlocks()
+                        } else {
+                            TelemetryCollector.incrementDisconnections()
+                        }
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
-                    } catch (_: Exception) {
+                    } catch (e: Exception) {
+                        TelemetryCollector.incrementDisconnections()
+                        try {
+                            TelemetryCollector.sendErrorLog(
+                                this@FccKeepaliveService,
+                                "keepalive",
+                                "Keepalive hatası: ${e.message}",
+                                e.stackTraceToString(),
+                                "FccKeepaliveService"
+                            )
+                        } catch (_: Exception) {}
                     } finally {
                         HardwareLock.end()
                     }

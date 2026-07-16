@@ -95,11 +95,16 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { /* granted or denied — no further action needed */ }
 
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* optional — telemetry uses last-known location when granted */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         NotificationHelper.createChannel(this)
         requestNotificationPermission()
+        requestLocationPermission()
         NotificationWorker.schedule(this)
 
         viewModel.init()
@@ -131,8 +136,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        val token = AuthManager.getToken(this) ?: return
-        Thread { AuthApi.goOffline(token) }.start()
+        val token = AuthManager.getToken(this)
+        Thread {
+            try {
+                kotlinx.coroutines.runBlocking {
+                    TelemetryCollector.flushFeatureEvents(this@MainActivity)
+                }
+            } catch (_: Exception) {}
+            if (token != null) AuthApi.goOffline(token)
+        }.start()
     }
 
     private fun requestNotificationPermission() {
@@ -142,6 +154,14 @@ class MainActivity : ComponentActivity() {
             ) {
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
+        }
+    }
+
+    private fun requestLocationPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
     }
 }
@@ -670,6 +690,11 @@ private fun AppRoot(viewModel: FccViewModel) {
     val entrance = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         entrance.animateTo(1f, tween(700, easing = EaseOutCubic))
+    }
+
+    val tabNames = listOf("fcc", "info", "log", "update", "support")
+    LaunchedEffect(pagerState.currentPage) {
+        TelemetryCollector.trackTab(tabNames.getOrElse(pagerState.currentPage) { "unknown" })
     }
 
     // Forced update gate — blocks the entire app when a mandatory update is pending
