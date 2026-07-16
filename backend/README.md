@@ -8,8 +8,10 @@ panelinden yönetilir.
 ## Ne içeriyor?
 
 - **Admin panel** (`/admin`): `App\Models\User` ile giriş yapan yöneticiler için.
-  Üye ekleme/silme/pasif yapma, cihaz sıfırlama, üyelik bitiş tarihi ve giriş
-  günlüğü buradan yönetilir.
+  Giriş alanına e-posta **veya** kullanıcı adı girilebilir (bkz.
+  `app/Filament/Pages/Auth/Login.php`) — `@` içermeyen girişler `username`
+  sütunuyla eşleştirilir. Üye ekleme/silme/pasif yapma, cihaz sıfırlama,
+  üyelik bitiş tarihi ve giriş günlüğü buradan yönetilir.
 - **API** (`/api/v1/...`): Android uygulamasının konuştuğu uçlar. Üyeler
   (`App\Models\Member`) admin panelinden giriş yapamaz; admin panel kullanıcıları
   API'den giriş yapamaz — iki kullanıcı türü kasıtlı olarak birbirinden ayrı.

@@ -40,9 +40,9 @@ sealed class AuthResult<out T> {
 
 object AuthApi {
 
-    // Local test: bilgisayarının IP'sini kullan (kumanda aynı ağda olmalı).
-    // Production'da HTTPS domain'e çevir.
-    const val BASE_URL = "http://192.168.1.102:8888/api/v1"
+    // Tek kaynak: uygulamadaki tüm ağ istekleri (UpdateChecker, NotificationPoller, vs.)
+    // bu sabiti kullanır — URL'yi değiştirmek gerektiğinde sadece burası güncellenir.
+    const val BASE_URL = "https://fcc.gecgelsoft.com/api/v1"
 
     fun login(
         username: String,

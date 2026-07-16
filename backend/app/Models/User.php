@@ -15,7 +15,7 @@ use Illuminate\Notifications\Notifiable;
 /**
  * Admin panel users only — see App\Models\Member for mobile app end users.
  */
-#[Fillable(['name', 'email', 'password'])]
+#[Fillable(['name', 'email', 'username', 'password'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable implements FilamentUser
 {
