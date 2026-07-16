@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\FlightAutoCloseService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -141,6 +142,9 @@ class Member extends Model
             'is_online' => false,
             'total_online_seconds' => $this->total_online_seconds + $duration,
         ])->save();
+
+        // RC power-off / lost heartbeat: close open flight so the WhatsApp group gets an end notice.
+        app(FlightAutoCloseService::class)->closeOpenFlightIfNeeded($this);
     }
 
     /** True when the online flag is set and the last heartbeat is still fresh. */

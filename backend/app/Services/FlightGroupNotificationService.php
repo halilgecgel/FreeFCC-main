@@ -221,7 +221,7 @@ class FlightGroupNotificationService
         $duration = $this->formatDuration((int) ($session->duration_seconds ?? 0));
         $time = now()->timezone('Europe/Istanbul')->format('d.m.Y H:i');
 
-        return implode("\n", [
+        $lines = [
             '🛬 *Uçuş tamamlandı*',
             '',
             "👤 Pilot: {$pilot}",
@@ -229,9 +229,17 @@ class FlightGroupNotificationService
             "📍 Konum: {$place}",
             "⏱ Süre: {$duration}",
             "🕐 Saat: {$time}",
-            '',
-            '_ŞANLIURFA DRONE PİLOTLARI_',
-        ]);
+        ];
+
+        if ($session->failure_reason === FlightAutoCloseService::REASON_AUTO_CLOSED_OFFLINE) {
+            $lines[] = '';
+            $lines[] = '_Bağlantı kesildi (kumanda kapandı veya uygulama yanıt vermedi)_';
+        }
+
+        $lines[] = '';
+        $lines[] = '_ŞANLIURFA DRONE PİLOTLARI_';
+
+        return implode("\n", $lines);
     }
 
     protected function pilotLabel(Member $member): string
