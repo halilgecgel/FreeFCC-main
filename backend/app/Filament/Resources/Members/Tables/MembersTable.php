@@ -1,0 +1,86 @@
+<?php
+
+namespace App\Filament\Resources\Members\Tables;
+
+use Filament\Actions\Action;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\EditAction;
+use Filament\Notifications\Notification;
+use Filament\Tables\Columns\IconColumn;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Table;
+
+class MembersTable
+{
+    public static function configure(Table $table): Table
+    {
+        return $table
+            ->columns([
+                TextColumn::make('username')
+                    ->label('Kullanıcı Adı')
+                    ->searchable()
+                    ->sortable(),
+                TextColumn::make('name')
+                    ->label('Ad Soyad')
+                    ->searchable()
+                    ->toggleable(),
+                TextColumn::make('status_label')
+                    ->label('Durum')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'Aktif' => 'success',
+                        'Süresi Doldu' => 'warning',
+                        default => 'danger',
+                    }),
+                IconColumn::make('device_id')
+                    ->label('Cihaz Kayıtlı')
+                    ->boolean()
+                    ->getStateUsing(fn ($record) => filled($record->device_id)),
+                TextColumn::make('expires_at')
+                    ->label('Bitiş Tarihi')
+                    ->dateTime('d.m.Y H:i')
+                    ->placeholder('Süresiz')
+                    ->sortable(),
+                TextColumn::make('last_login_at')
+                    ->label('Son Giriş')
+                    ->dateTime('d.m.Y H:i')
+                    ->placeholder('Hiç giriş yapmadı')
+                    ->sortable(),
+                TextColumn::make('last_login_ip')
+                    ->label('Son IP')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('app_version')
+                    ->label('Uygulama Sürümü')
+                    ->toggleable(isToggledHiddenByDefault: true),
+            ])
+            ->filters([
+                TernaryFilter::make('is_active')
+                    ->label('Aktif mi?'),
+            ])
+            ->recordActions([
+                Action::make('resetDevice')
+                    ->label('Cihazı Sıfırla')
+                    ->icon('heroicon-o-device-phone-mobile')
+                    ->color('warning')
+                    ->visible(fn ($record) => filled($record->device_id))
+                    ->requiresConfirmation()
+                    ->modalDescription('Bu üyenin cihaz kilidi kaldırılacak ve aktif oturumu sonlandırılacak. Üye bir dahaki girişte yeni bir cihazdan giriş yapabilecek.')
+                    ->action(function ($record) {
+                        $record->resetDevice();
+
+                        Notification::make()
+                            ->title('Cihaz kaydı sıfırlandı')
+                            ->success()
+                            ->send();
+                    }),
+                EditAction::make(),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                ]),
+            ]);
+    }
+}

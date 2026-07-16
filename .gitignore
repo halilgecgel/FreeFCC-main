@@ -1,0 +1,57 @@
+# Build
+build/
+app/build/
+*.apk
+*.ap_
+*.aab
+*.dex
+*.idsig
+
+# Gradle / IDE
+.gradle/
+gradle/.gradle/
+.idea/
+*.iml
+.kotlin/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.hprof
+
+# Secrets / signing
+keystore.properties
+*.jks
+*.keystore
+
+# Root media leftovers (app resources under app/src stay tracked)
+/*.mp4
+/*.mp3
+/*.wav
+
+# Backend (Laravel) — keep in sync with backend/.gitignore intent
+backend/vendor/
+backend/node_modules/
+backend/.env
+backend/.env.backup
+backend/.env.production
+backend/storage/app/public/releases/
+backend/storage/framework/cache/
+backend/storage/framework/sessions/
+backend/storage/framework/views/
+backend/storage/logs/
+backend/public/build/
+backend/public/hot
+backend/public/storage
+backend/database/database.sqlite
+backend/.phpunit.result.cache
+
+# OS / misc
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+
+# Internal notes
+REMOTE_ID_INTERNAL.md
