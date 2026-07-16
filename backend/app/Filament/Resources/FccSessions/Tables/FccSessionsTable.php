@@ -2,6 +2,9 @@
 
 namespace App\Filament\Resources\FccSessions\Tables;
 
+use App\Filament\Resources\FccSessions\FccSessionResource;
+use App\Models\FccSession;
+use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -14,6 +17,7 @@ class FccSessionsTable
     {
         return $table
             ->defaultSort('created_at', 'desc')
+            ->recordUrl(fn (FccSession $record) => FccSessionResource::getUrl('view', ['record' => $record]))
             ->columns([
                 TextColumn::make('created_at')
                     ->label('Tarih')
@@ -26,14 +30,7 @@ class FccSessionsTable
                 TextColumn::make('action')
                     ->label('İşlem')
                     ->badge()
-                    ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'fcc_enable' => 'FCC Etkinleştir',
-                        'fcc_disable' => 'FCC Durdur',
-                        'keepalive_start' => 'Keepalive Başlat',
-                        'keepalive_stop' => 'Keepalive Durdur',
-                        'auto_fcc' => 'Otomatik FCC',
-                        default => $state,
-                    })
+                    ->formatStateUsing(fn (string $state): string => FccSession::actionLabel($state))
                     ->color(fn (string $state): string => match ($state) {
                         'fcc_enable', 'auto_fcc' => 'success',
                         'fcc_disable' => 'danger',
@@ -46,15 +43,7 @@ class FccSessionsTable
                     ->boolean(),
                 TextColumn::make('duration_seconds')
                     ->label('Süre')
-                    ->formatStateUsing(function ($state) {
-                        if (! $state) return '—';
-                        $hours = intdiv($state, 3600);
-                        $minutes = intdiv($state % 3600, 60);
-                        $seconds = $state % 60;
-                        if ($hours > 0) return "{$hours}s {$minutes}dk";
-                        if ($minutes > 0) return "{$minutes}dk {$seconds}sn";
-                        return "{$seconds}sn";
-                    })
+                    ->formatStateUsing(fn ($state) => FccSession::formatDuration($state ? (int) $state : null))
                     ->toggleable(),
                 TextColumn::make('keepalive_count')
                     ->label('Keepalive')
@@ -85,6 +74,10 @@ class FccSessionsTable
                     ]),
                 TernaryFilter::make('success')
                     ->label('Başarılı mı?'),
+            ])
+            ->recordActions([
+                ViewAction::make()
+                    ->label('Detay'),
             ]);
     }
 }

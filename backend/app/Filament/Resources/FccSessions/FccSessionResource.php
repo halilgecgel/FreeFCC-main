@@ -3,10 +3,13 @@
 namespace App\Filament\Resources\FccSessions;
 
 use App\Filament\Resources\FccSessions\Pages\ListFccSessions;
+use App\Filament\Resources\FccSessions\Pages\ViewFccSession;
+use App\Filament\Resources\FccSessions\Schemas\FccSessionInfolist;
 use App\Filament\Resources\FccSessions\Tables\FccSessionsTable;
 use App\Models\FccSession;
 use BackedEnum;
 use Filament\Resources\Resource;
+use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use UnitEnum;
@@ -17,13 +20,18 @@ class FccSessionResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedSignal;
 
-    protected static ?string $modelLabel = 'FCC Oturumu';
+    protected static ?string $modelLabel = 'Uçuş';
 
-    protected static ?string $pluralModelLabel = 'FCC Oturumları';
+    protected static ?string $pluralModelLabel = 'Uçuş Geçmişi';
 
-    protected static ?string $navigationLabel = 'FCC Oturumları';
+    protected static ?string $navigationLabel = 'Uçuş Geçmişi';
 
     protected static string|UnitEnum|null $navigationGroup = 'Telemetri';
+
+    public static function infolist(Schema $schema): Schema
+    {
+        return FccSessionInfolist::configure($schema);
+    }
 
     public static function table(Table $table): Table
     {
@@ -44,6 +52,7 @@ class FccSessionResource extends Resource
     {
         return [
             'index' => ListFccSessions::route('/'),
+            'view' => ViewFccSession::route('/{record}'),
         ];
     }
 }

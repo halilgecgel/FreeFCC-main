@@ -46,8 +46,8 @@ class MemberResource extends Resource
     public static function getRelations(): array
     {
         return [
-            RelationManagers\ActivityLogsRelationManager::class,
             RelationManagers\FccSessionsRelationManager::class,
+            RelationManagers\ActivityLogsRelationManager::class,
             RelationManagers\DeviceTelemetryRelationManager::class,
             RelationManagers\ErrorLogsRelationManager::class,
         ];

@@ -10,7 +10,7 @@ class ActivityLogsRelationManager extends RelationManager
 {
     protected static string $relationship = 'activityLogs';
 
-    protected static ?string $title = 'Aktivite Geçmişi';
+    protected static ?string $title = 'Çevrimiçi Geçmişi';
 
     public function table(Table $table): Table
     {

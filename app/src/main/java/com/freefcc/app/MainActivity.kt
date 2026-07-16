@@ -145,7 +145,7 @@ class MainActivity : ComponentActivity() {
         Thread {
             try {
                 kotlinx.coroutines.runBlocking {
-                    TelemetryCollector.flushFeatureEvents(this@MainActivity)
+                    TelemetryCollector.flushPendingTelemetry(this@MainActivity)
                 }
             } catch (_: Exception) {}
             if (token != null) AuthApi.goOffline(token)

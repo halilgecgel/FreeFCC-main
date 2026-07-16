@@ -2,6 +2,9 @@
 
 namespace App\Filament\Resources\Members\RelationManagers;
 
+use App\Filament\Resources\FccSessions\FccSessionResource;
+use App\Models\FccSession;
+use Filament\Actions\ViewAction;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -11,23 +14,17 @@ class FccSessionsRelationManager extends RelationManager
 {
     protected static string $relationship = 'fccSessions';
 
-    protected static ?string $title = 'FCC Oturumları';
+    protected static ?string $title = 'Aktivite Geçmişi';
 
     public function table(Table $table): Table
     {
         return $table
+            ->recordUrl(fn (FccSession $record) => FccSessionResource::getUrl('view', ['record' => $record]))
             ->columns([
                 TextColumn::make('action')
                     ->label('İşlem')
                     ->badge()
-                    ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'fcc_enable' => 'FCC Etkinleştir',
-                        'fcc_disable' => 'FCC Durdur',
-                        'keepalive_start' => 'Keepalive Başlat',
-                        'keepalive_stop' => 'Keepalive Durdur',
-                        'auto_fcc' => 'Otomatik FCC',
-                        default => $state,
-                    })
+                    ->formatStateUsing(fn (string $state): string => FccSession::actionLabel($state))
                     ->color(fn (string $state): string => match ($state) {
                         'fcc_enable', 'auto_fcc' => 'success',
                         'fcc_disable' => 'danger',
@@ -38,21 +35,29 @@ class FccSessionsRelationManager extends RelationManager
                     ->boolean(),
                 TextColumn::make('duration_seconds')
                     ->label('Süre')
-                    ->formatStateUsing(function ($state) {
-                        if (! $state) return '—';
-                        $hours = intdiv($state, 3600);
-                        $minutes = intdiv($state % 3600, 60);
-                        if ($hours > 0) return "{$hours}s {$minutes}dk";
-                        if ($minutes > 0) return "{$minutes}dk";
-                        return "{$state}sn";
-                    }),
+                    ->formatStateUsing(fn ($state) => FccSession::formatDuration($state ? (int) $state : null)),
                 TextColumn::make('keepalive_count')
                     ->label('Keepalive'),
+                TextColumn::make('aircraft_serial')
+                    ->label('Uçak S/N')
+                    ->placeholder('—')
+                    ->toggleable(),
+                TextColumn::make('location')
+                    ->label('Konum')
+                    ->state(fn (FccSession $record) => $record->locationLabel())
+                    ->toggleable(),
                 TextColumn::make('created_at')
                     ->label('Tarih')
                     ->dateTime('d.m.Y H:i')
                     ->sortable(),
             ])
-            ->defaultSort('created_at', 'desc');
+            ->recordActions([
+                ViewAction::make()
+                    ->label('Detay')
+                    ->url(fn (FccSession $record) => FccSessionResource::getUrl('view', ['record' => $record])),
+            ])
+            ->defaultSort('created_at', 'desc')
+            ->emptyStateHeading('Henüz uçuş yok')
+            ->emptyStateDescription('Üyenin FCC oturum / uçuş kayıtları burada listelenir. Satıra tıklayarak detayı açın.');
     }
 }

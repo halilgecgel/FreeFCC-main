@@ -87,6 +87,11 @@ class Member extends Model
         return $this->hasMany(ErrorLog::class);
     }
 
+    public function appActivityLogs(): HasMany
+    {
+        return $this->hasMany(AppActivityLog::class);
+    }
+
     public function connectionMetrics(): HasMany
     {
         return $this->hasMany(ConnectionMetric::class);

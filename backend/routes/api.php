@@ -27,6 +27,8 @@ Route::prefix('v1')->group(function () {
             Route::post('/feature-usage/batch', [TelemetryController::class, 'featureUsageBatch']);
             Route::post('/error', [TelemetryController::class, 'errorLog']);
             Route::post('/error/batch', [TelemetryController::class, 'errorLogBatch']);
+            Route::post('/activity', [TelemetryController::class, 'activityLog']);
+            Route::post('/activity/batch', [TelemetryController::class, 'activityLogBatch']);
             Route::post('/connection-metrics', [TelemetryController::class, 'connectionMetrics']);
         });
     });

@@ -115,8 +115,8 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
     private fun startTelemetryFlush() {
         runOnIO {
             while (true) {
-                delay(60_000)
-                try { TelemetryCollector.flushFeatureEvents(app) } catch (_: Exception) {}
+                delay(15_000)
+                try { TelemetryCollector.flushPendingTelemetry(app) } catch (_: Exception) {}
             }
         }
     }
@@ -1032,11 +1032,15 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
         _state.value = _state.value.block()
     }
 
-    /** Adds a timestamped entry to the activity log (most recent first, max 50). */
+    /** Adds a timestamped entry to the activity log (most recent first, max 50) and queues server upload. */
     private fun log(message: String) {
         val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         val entry = "[$time] $message"
         update { copy(logMessages = (listOf(entry) + logMessages).take(50)) }
+        try {
+            TelemetryCollector.trackActivity(message)
+        } catch (_: Exception) {
+        }
     }
 
     /** Launches a coroutine on Dispatchers.IO for network operations. */

@@ -19,7 +19,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
@@ -29,10 +32,16 @@ object TelemetryCollector {
     private const val FRESH_LOCATION_MAX_AGE_MS = 30 * 60 * 1000L
     private const val STALE_LOCATION_MAX_AGE_MS = 6 * 60 * 60 * 1000L
     private const val LOCATION_FIX_TIMEOUT_MS = 20_000L
+    private const val ACTIVITY_FLUSH_THRESHOLD = 15
 
     private val pendingFeatureEvents = CopyOnWriteArrayList<FeatureEvent>()
+    private val pendingActivityEvents = CopyOnWriteArrayList<ActivityEvent>()
     private val disconnectionCount = AtomicInteger(0)
     private val crcErrorCount = AtomicInteger(0)
+
+    private val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+    }
 
     private var fccStartTime: Long = 0L
     private var keepaliveCount = AtomicInteger(0)
@@ -57,6 +66,38 @@ object TelemetryCollector {
 
     fun trackTab(tabName: String) {
         trackFeature("tab_switch", true, mapOf("tab" to tabName))
+    }
+
+    /** Queues a UI activity log line for upload (same messages shown in the app log panel). */
+    fun trackActivity(message: String, level: String? = null) {
+        val resolvedLevel = level ?: inferActivityLevel(message)
+        val loggedAt = synchronized(isoFmt) { isoFmt.format(Date()) }
+        pendingActivityEvents.add(
+            ActivityEvent(
+                level = resolvedLevel,
+                message = message,
+                loggedAt = loggedAt,
+                appVersion = FccViewModel.APP_VERSION
+            )
+        )
+    }
+
+    private fun inferActivityLevel(message: String): String {
+        val lower = message.lowercase(Locale("tr", "TR"))
+        return when {
+            lower.contains("başarısız") ||
+                lower.contains("alınamadı") ||
+                lower.contains("algılanmadı") ||
+                lower.contains("hata") ||
+                lower.contains("crash") ||
+                lower.contains("failed") ||
+                lower.contains("error") -> "error"
+            lower.contains("uyarı") ||
+                lower.contains("warn") ||
+                lower.contains("timeout") ||
+                lower.contains("yeniden") -> "warn"
+            else -> "info"
+        }
     }
 
     fun incrementDisconnections() {
@@ -228,6 +269,28 @@ object TelemetryCollector {
                 pendingFeatureEvents.addAll(0, batch)
             }
         }
+    }
+
+    suspend fun flushActivityLogs(context: Context, force: Boolean = false) {
+        if (pendingActivityEvents.isEmpty()) return
+        if (!force && pendingActivityEvents.size < ACTIVITY_FLUSH_THRESHOLD) return
+
+        val token = AuthManager.getToken(context) ?: return
+        val batch = ArrayList(pendingActivityEvents)
+        pendingActivityEvents.clear()
+
+        withContext(Dispatchers.IO) {
+            val ok = TelemetryApi.sendActivityLogBatch(token, batch)
+            if (!ok) {
+                pendingActivityEvents.addAll(0, batch)
+            }
+        }
+    }
+
+    /** Flushes both feature and activity queues (periodic / onStop). */
+    suspend fun flushPendingTelemetry(context: Context) {
+        flushFeatureEvents(context)
+        flushActivityLogs(context, force = true)
     }
 
     private fun detectNetworkType(context: Context): String {

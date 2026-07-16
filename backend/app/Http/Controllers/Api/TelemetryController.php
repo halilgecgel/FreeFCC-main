@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AppActivityLog;
 use App\Models\ConnectionMetric;
 use App\Models\DeviceTelemetry;
 use App\Models\ErrorLog;
 use App\Models\FccSession;
 use App\Models\FeatureUsageLog;
 use App\Services\FlightGroupNotificationService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 class TelemetryController extends Controller
@@ -179,5 +181,63 @@ class TelemetryController extends Controller
         ]));
 
         return response()->json(['status' => 'ok']);
+    }
+
+    public function activityLog(Request $request)
+    {
+        $data = $request->validate([
+            'level' => ['nullable', 'string', 'in:info,warn,error,debug'],
+            'message' => ['required', 'string', 'max:2000'],
+            'app_version' => ['nullable', 'string', 'max:50'],
+            'logged_at' => ['nullable', 'date'],
+        ]);
+
+        $this->storeActivityLog($request->user()->id, $data);
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    public function activityLogBatch(Request $request)
+    {
+        $data = $request->validate([
+            'events' => ['required', 'array', 'max:100'],
+            'events.*.level' => ['nullable', 'string', 'in:info,warn,error,debug'],
+            'events.*.message' => ['required', 'string', 'max:2000'],
+            'events.*.app_version' => ['nullable', 'string', 'max:50'],
+            'events.*.logged_at' => ['nullable', 'date'],
+        ]);
+
+        $memberId = $request->user()->id;
+
+        foreach ($data['events'] as $event) {
+            $this->storeActivityLog($memberId, $event);
+        }
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * @param  array{level?: string|null, message: string, app_version?: string|null, logged_at?: string|null}  $event
+     */
+    protected function storeActivityLog(int $memberId, array $event): void
+    {
+        $loggedAt = now();
+
+        if (! empty($event['logged_at'])) {
+            try {
+                $loggedAt = Carbon::parse($event['logged_at']);
+            } catch (\Throwable) {
+                // keep server time
+            }
+        }
+
+        AppActivityLog::create([
+            'member_id' => $memberId,
+            'level' => $event['level'] ?? 'info',
+            'message' => $event['message'],
+            'app_version' => $event['app_version'] ?? null,
+            'created_at' => $loggedAt,
+            'updated_at' => $loggedAt,
+        ]);
     }
 }

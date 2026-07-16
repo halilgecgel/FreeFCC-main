@@ -158,6 +158,24 @@ object TelemetryApi {
         return post("/telemetry/error", body, token)
     }
 
+    fun sendActivityLogBatch(
+        token: String,
+        events: List<ActivityEvent>
+    ): Boolean {
+        if (events.isEmpty()) return true
+        val arr = JSONArray()
+        for (event in events) {
+            arr.put(JSONObject().apply {
+                put("level", event.level)
+                put("message", event.message)
+                put("app_version", event.appVersion ?: JSONObject.NULL)
+                put("logged_at", event.loggedAt)
+            })
+        }
+        val body = JSONObject().apply { put("events", arr) }
+        return post("/telemetry/activity/batch", body, token)
+    }
+
     fun sendConnectionMetrics(
         token: String,
         connectTimeMs: Int? = null,
@@ -205,4 +223,11 @@ data class FeatureEvent(
     val feature: String,
     val success: Boolean,
     val metadata: Map<String, Any?>? = null
+)
+
+data class ActivityEvent(
+    val level: String,
+    val message: String,
+    val loggedAt: String,
+    val appVersion: String? = null
 )
