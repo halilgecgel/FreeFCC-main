@@ -2,10 +2,14 @@
 
 namespace App\Filament\Resources\Members\Tables;
 
+use App\Filament\Resources\Members\MemberResource;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -88,23 +92,34 @@ class MembersTable
             ])
             ->defaultSort('is_online', 'desc')
             ->poll('10s')
+            ->recordUrl(fn ($record) => MemberResource::getUrl('view', ['record' => $record]))
             ->recordActions([
-                Action::make('resetDevice')
-                    ->label('Cihazı Sıfırla')
-                    ->icon('heroicon-o-device-phone-mobile')
-                    ->color('warning')
-                    ->visible(fn ($record) => filled($record->device_id))
-                    ->requiresConfirmation()
-                    ->modalDescription('Bu üyenin cihaz kilidi kaldırılacak ve aktif oturumu sonlandırılacak. Üye bir dahaki girişte yeni bir cihazdan giriş yapabilecek.')
-                    ->action(function ($record) {
-                        $record->resetDevice();
+                ActionGroup::make([
+                    ViewAction::make()
+                        ->label('Detay'),
+                    EditAction::make()
+                        ->label('Düzenle'),
+                    Action::make('resetDevice')
+                        ->label('Cihazı Sıfırla')
+                        ->icon('heroicon-o-device-phone-mobile')
+                        ->color('warning')
+                        ->visible(fn ($record) => filled($record->device_id))
+                        ->requiresConfirmation()
+                        ->modalHeading('Cihaz Sıfırlama')
+                        ->modalDescription('Bu üyenin cihaz kilidi kaldırılacak ve aktif oturumu sonlandırılacak. Üye bir dahaki girişte yeni bir cihazdan giriş yapabilecek.')
+                        ->action(function ($record) {
+                            $record->resetDevice();
 
-                        Notification::make()
-                            ->title('Cihaz kaydı sıfırlandı')
-                            ->success()
-                            ->send();
-                    }),
-                EditAction::make(),
+                            Notification::make()
+                                ->title('Cihaz kaydı sıfırlandı')
+                                ->success()
+                                ->send();
+                        }),
+                    DeleteAction::make()
+                        ->label('Sil'),
+                ])
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->tooltip('İşlemler'),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
