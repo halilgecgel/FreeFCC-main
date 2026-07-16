@@ -140,93 +140,56 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun SplashScreen(onFinished: () -> Unit) {
-    val titleAlpha = remember { Animatable(0f) }
-    val titleScale = remember { Animatable(0.3f) }
-    val titleOffsetY = remember { Animatable(40f) }
-    val subtitleAlpha = remember { Animatable(0f) }
-    val creditAlpha = remember { Animatable(0f) }
-    val creditScale = remember { Animatable(0.5f) }
-    val ringProgress = remember { Animatable(0f) }
-    val ring2Progress = remember { Animatable(0f) }
-    val iconAlpha = remember { Animatable(0f) }
-    val iconScale = remember { Animatable(0f) }
-    val lineWidth = remember { Animatable(0f) }
-    val exitAlpha = remember { Animatable(1f) }
-    val exitScale = remember { Animatable(1f) }
+    val phase = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
-        iconScale.animateTo(1.3f, tween(500, easing = EaseOutCubic))
-        iconScale.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
-    }
-    LaunchedEffect(Unit) {
-        iconAlpha.animateTo(1f, tween(400))
-    }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(100)
-        ringProgress.animateTo(1f, tween(1400, easing = EaseOutCubic))
-    }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(300)
-        ring2Progress.animateTo(1f, tween(1600, easing = EaseOutCubic))
-    }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(500)
-        titleAlpha.animateTo(1f, tween(500, easing = EaseOutCubic))
-    }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(500)
-        titleScale.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 200f))
-    }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(500)
-        titleOffsetY.animateTo(0f, spring(dampingRatio = 0.6f, stiffness = 200f))
-    }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(900)
-        lineWidth.animateTo(1f, tween(600, easing = EaseOutCubic))
-    }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(1100)
-        subtitleAlpha.animateTo(1f, tween(500))
-    }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(1500)
-        creditAlpha.animateTo(1f, tween(600))
-    }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(1500)
-        creditScale.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
-    }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(3200)
-        exitScale.animateTo(1.1f, tween(300, easing = EaseInCubic))
-    }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(3200)
-        exitAlpha.animateTo(0f, tween(400, easing = EaseInCubic))
+        phase.animateTo(1f, tween(2800, easing = LinearEasing))
+        delay(200)
         onFinished()
     }
 
+    val p = phase.value
+
+    val logoAlpha = (p / 0.15f).coerceIn(0f, 1f)
+    val logoScale = if (p < 0.15f) {
+        0.4f + 0.6f * EaseOutBack.transform(p / 0.15f)
+    } else 1f
+
+    val ringReveal = ((p - 0.1f) / 0.25f).coerceIn(0f, 1f)
+
+    val titleAlpha = ((p - 0.25f) / 0.15f).coerceIn(0f, 1f)
+    val titleOffsetY = if (p < 0.4f) {
+        30f * (1f - EaseOutCubic.transform(((p - 0.25f) / 0.15f).coerceIn(0f, 1f)))
+    } else 0f
+
+    val lineWidth = ((p - 0.35f) / 0.15f).coerceIn(0f, 1f)
+
+    val subtitleAlpha = ((p - 0.45f) / 0.12f).coerceIn(0f, 1f)
+
+    val creditAlpha = ((p - 0.55f) / 0.15f).coerceIn(0f, 1f)
+    val creditScale = if (p < 0.7f) {
+        0.7f + 0.3f * EaseOutCubic.transform(((p - 0.55f) / 0.15f).coerceIn(0f, 1f))
+    } else 1f
+
+    val exitProgress = ((p - 0.88f) / 0.12f).coerceIn(0f, 1f)
+    val exitAlpha = 1f - EaseInCubic.transform(exitProgress)
+    val exitScale = 1f + 0.08f * EaseInCubic.transform(exitProgress)
+
     val inf = rememberInfiniteTransition(label = "splashInf")
     val glowPulse by inf.animateFloat(
-        0.06f, 0.25f,
-        infiniteRepeatable(tween(1800, easing = EaseInOutSine), RepeatMode.Reverse),
+        0.08f, 0.22f,
+        infiniteRepeatable(tween(1600, easing = EaseInOutSine), RepeatMode.Reverse),
         label = "glow"
     )
     val ringRotation by inf.animateFloat(
         0f, 360f,
-        infiniteRepeatable(tween(6000, easing = LinearEasing), RepeatMode.Restart),
+        infiniteRepeatable(tween(5000, easing = LinearEasing), RepeatMode.Restart),
         label = "ringRot"
     )
     val ring2Rotation by inf.animateFloat(
         360f, 0f,
-        infiniteRepeatable(tween(8000, easing = LinearEasing), RepeatMode.Restart),
+        infiniteRepeatable(tween(7000, easing = LinearEasing), RepeatMode.Restart),
         label = "ring2Rot"
-    )
-    val particlePhase by inf.animateFloat(
-        0f, (2 * PI).toFloat(),
-        infiniteRepeatable(tween(3000, easing = LinearEasing), RepeatMode.Restart),
-        label = "particles"
     )
 
     Box(
@@ -234,155 +197,131 @@ private fun SplashScreen(onFinished: () -> Unit) {
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xFF050A1A), Color(0xFF0A1232), Color(0xFF0E1A40), Color(0xFF060C20))
+                    listOf(Color(0xFF0D1530), Color(0xFF070C1E), Color(0xFF040810))
                 )
             )
-            .alpha(exitAlpha.value)
-            .scale(exitScale.value),
+            .alpha(exitAlpha)
+            .scale(exitScale),
         contentAlignment = Alignment.Center
     ) {
-        // Multi-layer ambient glow
         Box(
-            Modifier.size(350.dp).background(
+            Modifier.size(320.dp).background(
                 Brush.radialGradient(
-                    listOf(Cyan.copy(glowPulse * 0.5f), Color.Transparent), radius = 500f
+                    listOf(Cyan.copy(glowPulse * logoAlpha), Color.Transparent), radius = 450f
                 )
             )
         )
         Box(
-            Modifier.size(280.dp).background(
+            Modifier.size(260.dp).background(
                 Brush.radialGradient(
-                    listOf(Purple.copy(glowPulse * 0.3f), Color.Transparent), radius = 400f
+                    listOf(Purple.copy(glowPulse * 0.4f * logoAlpha), Color.Transparent), radius = 380f
                 )
             )
         )
 
-        // Floating particles
-        Canvas(modifier = Modifier.size(300.dp)) {
-            for (i in 0..11) {
-                val angle = (i * 30f) * (PI / 180f) + particlePhase * (if (i % 2 == 0) 1 else -1)
-                val dist = 100f + 30f * sin(particlePhase + i * 0.8f)
-                val px = center.x + (dist * cos(angle)).toFloat()
-                val py = center.y + (dist * sin(angle)).toFloat()
-                val pAlpha = (0.3f + 0.4f * sin(particlePhase + i.toFloat())).coerceIn(0f, 1f)
-                val pSize = 2f + 2f * sin(particlePhase * 1.5f + i * 0.5f)
-                drawCircle(
-                    color = if (i % 3 == 0) Cyan.copy(pAlpha) else if (i % 3 == 1) Purple.copy(pAlpha) else Green.copy(pAlpha),
-                    radius = pSize,
-                    center = Offset(px, py)
-                )
-            }
-        }
-
-        // Outer ring
         Canvas(
             modifier = Modifier
-                .size(200.dp)
+                .size(190.dp)
                 .rotate(ringRotation)
-                .alpha(ringProgress.value)
+                .alpha(ringReveal)
         ) {
-            val sweep = ringProgress.value * 300f
+            val sweep = ringReveal * 280f
             drawArc(
                 brush = Brush.sweepGradient(
-                    listOf(Cyan.copy(0.9f), Purple.copy(0.7f), Pink.copy(0.5f), Cyan.copy(0.1f))
+                    listOf(Cyan.copy(0.85f), Purple.copy(0.6f), Cyan.copy(0.05f))
                 ),
                 startAngle = -90f, sweepAngle = sweep, useCenter = false,
-                style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+                style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
             )
         }
 
-        // Inner ring
         Canvas(
             modifier = Modifier
-                .size(160.dp)
+                .size(155.dp)
                 .rotate(ring2Rotation)
-                .alpha(ring2Progress.value)
+                .alpha(ringReveal * 0.7f)
         ) {
-            val sweep = ring2Progress.value * 240f
+            val sweep = ringReveal * 220f
             drawArc(
                 brush = Brush.sweepGradient(
-                    listOf(Green.copy(0.7f), Cyan.copy(0.5f), Green.copy(0.1f))
+                    listOf(Green.copy(0.6f), Cyan.copy(0.4f), Green.copy(0.05f))
                 ),
                 startAngle = 90f, sweepAngle = sweep, useCenter = false,
-                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round)
             )
         }
 
-        // HG Logo
-        Image(
-            painter = painterResource(R.drawable.hg_logo),
-            contentDescription = null,
-            modifier = Modifier
-                .size(120.dp)
-                .scale(iconScale.value)
-                .alpha(iconAlpha.value)
-                .offset(y = (-90).dp)
-        )
-
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(Modifier.height(16.dp))
-            Text(
-                "DJI FCC Mod",
-                color = Color.White.copy(alpha = titleAlpha.value),
-                fontSize = 38.sp,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 3.sp,
+            Image(
+                painter = painterResource(R.drawable.hg_logo),
+                contentDescription = null,
                 modifier = Modifier
-                    .scale(titleScale.value)
-                    .offset(y = titleOffsetY.value.dp)
+                    .size(100.dp)
+                    .scale(logoScale)
+                    .alpha(logoAlpha)
             )
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(24.dp))
 
-            // Animated divider line
+            Text(
+                "DJI FCC Mod",
+                color = Color.White.copy(alpha = titleAlpha),
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 2.sp,
+                modifier = Modifier.offset(y = titleOffsetY.dp)
+            )
+
+            Spacer(Modifier.height(10.dp))
+
             Box(
                 Modifier
-                    .fillMaxWidth(0.4f * lineWidth.value)
+                    .fillMaxWidth(0.35f * EaseOutCubic.transform(lineWidth))
                     .height(2.dp)
                     .background(
                         Brush.horizontalGradient(
-                            listOf(Color.Transparent, Cyan, Purple, Color.Transparent)
+                            listOf(Color.Transparent, Cyan.copy(lineWidth), Purple.copy(lineWidth), Color.Transparent)
                         )
                     )
             )
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(12.dp))
+
             Text(
                 "FREKANS KONTROL SİSTEMİ",
-                color = TextGray.copy(alpha = subtitleAlpha.value),
-                fontSize = 12.sp,
+                color = TextGray.copy(alpha = subtitleAlpha),
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 4.sp
+                letterSpacing = 3.sp
             )
 
-            Spacer(Modifier.height(50.dp))
+            Spacer(Modifier.height(44.dp))
 
-            // Credit badge
             Surface(
-                color = Green.copy(0.12f * creditAlpha.value),
+                color = Green.copy(0.10f * creditAlpha),
                 shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, Green.copy(0.3f * creditAlpha.value)),
+                border = BorderStroke(1.dp, Green.copy(0.25f * creditAlpha)),
                 modifier = Modifier
-                    .alpha(creditAlpha.value)
-                    .scale(creditScale.value)
+                    .alpha(creditAlpha)
+                    .scale(creditScale)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp)
                 ) {
                     Icon(
                         Icons.Filled.Code,
                         contentDescription = null,
                         tint = Green,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(15.dp)
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         "HG Tarafından Yapılmıştır",
                         color = Green,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
+                        letterSpacing = 0.8.sp
                     )
                 }
             }
