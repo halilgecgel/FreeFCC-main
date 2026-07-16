@@ -54,8 +54,9 @@ gerektirmez. Üretimde MySQL/PostgreSQL kullanmak isterseniz `.env`'deki
 3. `php artisan migrate --force`
 4. `php artisan make:filament-user` ile admin kullanıcınızı oluşturun.
 5. Web sunucunuzun (Nginx/Apache) doküman kökünü `public/` klasörüne yönlendirin.
-6. `php artisan config:cache && php artisan route:cache` (deploy sonrası önerilir).
-7. Android tarafında `AuthApi.BASE_URL` değerini bu domaine güncelleyin
+6. `php artisan storage:link` (APK güncellemelerinin indirilebilmesi için zorunlu).
+7. `php artisan config:cache && php artisan route:cache` (deploy sonrası önerilir).
+8. Android tarafında `AuthApi.BASE_URL` değerini bu domaine güncelleyin
    (bkz. `app/src/main/java/com/freefcc/app/AuthApi.kt`).
 
 ## API sözleşmesi

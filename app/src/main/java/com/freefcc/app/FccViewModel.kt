@@ -51,6 +51,7 @@ data class AppState(
     val isDownloadingUpdate: Boolean = false,
     val updateDownloadProgress: Float = 0f,
     val isUpdateDownloaded: Boolean = false,
+    val updateDownloadError: String? = null,
     val needsInstallPermission: Boolean = false,
     val updateAvailable: Boolean = false,
     val updateChecked: Boolean = false,
@@ -787,7 +788,14 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
     fun downloadUpdate() {
         val info = _state.value.updateInfo ?: return
         if (_state.value.isDownloadingUpdate) return
-        update { copy(isDownloadingUpdate = true, updateDownloadProgress = 0f, isUpdateDownloaded = false) }
+        update {
+            copy(
+                isDownloadingUpdate = true,
+                updateDownloadProgress = 0f,
+                isUpdateDownloaded = false,
+                updateDownloadError = null
+            )
+        }
         log("Güncelleme v${info.version} indiriliyor...")
 
         runOnIO {
@@ -795,7 +803,13 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                 emitDownloadProgress(progress)
             }) {
                 is UpdateChecker.DownloadResult.Err -> {
-                    update { copy(isDownloadingUpdate = false, updateDownloadProgress = 0f) }
+                    update {
+                        copy(
+                            isDownloadingUpdate = false,
+                            updateDownloadProgress = 0f,
+                            updateDownloadError = result.message
+                        )
+                    }
                     log("Güncelleme indirme başarısız: ${result.message}")
                 }
                 is UpdateChecker.DownloadResult.Ok -> {
@@ -804,7 +818,8 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                         copy(
                             isDownloadingUpdate = false,
                             updateDownloadProgress = 1f,
-                            isUpdateDownloaded = true
+                            isUpdateDownloaded = true,
+                            updateDownloadError = null
                         )
                     }
                     log("Güncelleme indirildi — yükleyici açılıyor...")

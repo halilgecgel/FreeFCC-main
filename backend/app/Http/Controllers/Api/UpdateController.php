@@ -36,11 +36,9 @@ class UpdateController extends Controller
         $isForced = $release->isForcedFor($clientVersion, $clientCode);
         $forceAfter = $release->forceAfterDate();
 
-        // Prefer the public storage URL so large APKs are served as static
-        // files (more reliable on php artisan serve / LAN controllers).
-        $downloadUrl = Storage::disk('public')->exists($release->apk_path)
-            ? Storage::disk('public')->url($release->apk_path)
-            : url("/api/v1/download/{$release->id}");
+        // Always serve via the API download endpoint. Public /storage URLs
+        // break when `php artisan storage:link` is missing on the host.
+        $downloadUrl = url("/api/v1/download/{$release->id}");
 
         return response()->json([
             'has_update' => true,

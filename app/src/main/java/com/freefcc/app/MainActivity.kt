@@ -1602,6 +1602,15 @@ private fun ForceUpdateScreen(state: AppState, viewModel: FccViewModel) {
                     GlowButton("Tekrar İndir", Cyan, filled = false) { viewModel.downloadUpdate() }
                 }
                 else -> {
+                    state.updateDownloadError?.let { err ->
+                        Text(
+                            err,
+                            color = Red,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
                     GlowButton("Güncellemeyi İndir", Green) { viewModel.downloadUpdate() }
                 }
             }
@@ -1964,6 +1973,10 @@ private fun UpdatePage(state: AppState, viewModel: FccViewModel) {
                         }
                     }
                     else -> {
+                        state.updateDownloadError?.let { err ->
+                            Text(err, color = Red, fontSize = 13.sp)
+                            Spacer(modifier.height(12.dp))
+                        }
                         GlowButton("İndir", Green) {
                             viewModel.downloadUpdate()
                         }
