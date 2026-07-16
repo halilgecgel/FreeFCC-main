@@ -55,9 +55,9 @@ class AppReleaseForm
                                 'application/x-authorware-bin',
                                 'application/java-archive',
                             ])
-                            ->maxSize(204800) // 200 MB in KB
+                            ->maxSize(204800) // 200 MB, KB cinsinden
                             ->visibility('public')
-                            ->helperText('Maksimum 200 MB. Yüklenen APK public storage\'da saklanır.'),
+                            ->helperText('Maksimum 200 MB. Yüklenen APK herkese açık depolama alanında saklanır.'),
                         TextInput::make('sha256')
                             ->label('SHA-256 Hash')
                             ->placeholder('İsteğe bağlı — APK bütünlük doğrulaması için')

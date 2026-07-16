@@ -28,7 +28,7 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('admin')
-            ->brandName('FreeFCC Panel')
+            ->brandName('HG FCC Panel')
             ->login(Login::class)
             ->colors([
                 'primary' => Color::Amber,

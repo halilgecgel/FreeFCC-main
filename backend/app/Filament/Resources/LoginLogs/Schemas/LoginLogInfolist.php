@@ -31,6 +31,14 @@ class LoginLogInfolist
                     ->boolean(),
                 TextEntry::make('reason')
                     ->label('Sonuç')
+                    ->formatStateUsing(fn (?string $state): string => match ($state) {
+                        'ok' => 'Başarılı',
+                        'invalid_credentials' => 'Hatalı Bilgi',
+                        'inactive' => 'Pasif Hesap',
+                        'expired' => 'Süresi Dolmuş',
+                        'device_mismatch' => 'Cihaz Uyuşmazlığı',
+                        default => $state ?? '-',
+                    })
                     ->placeholder('-'),
                 TextEntry::make('created_at')
                     ->label('Tarih')
