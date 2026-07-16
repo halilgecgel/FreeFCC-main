@@ -118,9 +118,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        val token = AuthManager.getToken(this) ?: return
+        Thread { AuthApi.heartbeat(token) }.start()
+    }
+
     override fun onResume() {
         super.onResume()
         viewModel.onAppResumed()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        val token = AuthManager.getToken(this) ?: return
+        Thread { AuthApi.goOffline(token) }.start()
     }
 
     private fun requestNotificationPermission() {

@@ -111,6 +111,14 @@ object AuthApi {
         }
     }
 
+    /** Marks the member offline without revoking the token. Called on app background/close. */
+    fun goOffline(token: String) {
+        try {
+            request("POST", "/offline", body = null, token = token)
+        } catch (_: Exception) {
+        }
+    }
+
     /** Revokes the current token server-side. Best-effort — ignore failures, we log out locally regardless. */
     fun logout(token: String) {
         try {

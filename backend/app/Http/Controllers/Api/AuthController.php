@@ -128,6 +128,13 @@ class AuthController extends Controller
         return response()->json(['status' => 'ok']);
     }
 
+    public function offline(Request $request)
+    {
+        $request->user()->markOffline();
+
+        return response()->json(['status' => 'ok']);
+    }
+
     public function logout(Request $request)
     {
         $member = $request->user();
