@@ -86,7 +86,8 @@ class FlightGroupNotificationService
     }
 
     /**
-     * True when FCC is re-applied while an earlier enable/auto_fcc is still the last flight event.
+     * True when FCC is re-applied while an earlier enable/auto_fcc is still the last flight event
+     * and that enable is within the reapply cooldown (avoids spam; stale opens allow a new start message).
      */
     protected function isReapplyWhileActive(Member $member, FccSession $session): bool
     {
@@ -98,8 +99,17 @@ class FlightGroupNotificationService
             ->latest('id')
             ->first();
 
-        return $previous !== null
-            && in_array($previous->action, ['fcc_enable', 'auto_fcc'], true);
+        if ($previous === null || ! in_array($previous->action, ['fcc_enable', 'auto_fcc'], true)) {
+            return false;
+        }
+
+        $cooldownMinutes = max(0, (int) config('services.evolution.flight_reapply_cooldown_minutes', 15));
+
+        if ($cooldownMinutes === 0 || $previous->created_at === null) {
+            return true;
+        }
+
+        return $previous->created_at->gt(now()->subMinutes($cooldownMinutes));
     }
 
     public function resolveGroupJid(): ?string

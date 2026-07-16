@@ -14,6 +14,7 @@ import android.os.Bundle
 import android.os.HandlerThread
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -29,6 +30,7 @@ import kotlin.coroutines.resume
 
 object TelemetryCollector {
 
+    private const val TAG = "FreeFCC/FlightNotify"
     private const val FRESH_LOCATION_MAX_AGE_MS = 30 * 60 * 1000L
     private const val STALE_LOCATION_MAX_AGE_MS = 6 * 60 * 60 * 1000L
     private const val LOCATION_FIX_TIMEOUT_MS = 20_000L
@@ -177,21 +179,59 @@ object TelemetryCollector {
         }
     }
 
+    /**
+     * Sends FCC session telemetry. Returns diagnostic lines for the in-app activity log.
+     */
     suspend fun sendFccSession(
         context: Context,
         action: String,
         success: Boolean,
         failureReason: String? = null,
         aircraftSerial: String? = null
-    ) {
-        val token = AuthManager.getToken(context) ?: return
+    ): List<String> {
+        val notes = mutableListOf<String>()
+        fun note(msg: String) {
+            notes += msg
+            Log.i(TAG, msg)
+            try {
+                trackActivity(msg)
+            } catch (_: Exception) {
+            }
+        }
+
+        val token = AuthManager.getToken(context)
+        if (token == null) {
+            note("Uçuş bildirimi: auth token yok — API çağrısı atlandı ($action)")
+            return notes
+        }
+
         val controllerModel = try { Build.DEVICE } catch (_: Exception) { null }
         // device_model = bağlı drone; RC kumanda modeli (Build.MODEL) değil
         val serial = aircraftSerial?.takeIf { it.isNotBlank() }
+        if (serial == null) {
+            note("Uçuş bildirimi: aircraft_serial boş → cihaz 'Bilinmiyor' olacak (probe başarısız veya drone bağlı değil)")
+        } else {
+            note("Uçuş bildirimi: aircraft_serial=$serial")
+        }
         val deviceModel = serial?.let { inferDroneModel(it) }
-        val location = resolveLocationInfo(context)
+        if (serial != null && deviceModel == null) {
+            note("Uçuş bildirimi: seri için drone modeli eşleşmedi (prefix bilinmiyor)")
+        } else if (deviceModel != null) {
+            note("Uçuş bildirimi: device_model=$deviceModel")
+        }
 
-        withContext(Dispatchers.IO) {
+        note("Uçuş bildirimi: konum çözülüyor (izin/cache/lastKnown/fresh)...")
+        val location = resolveLocationInfo(context, ::note)
+        if (location.latitude == null || location.longitude == null) {
+            note("Uçuş bildirimi: konum alınamadı → WhatsApp'ta 'Konum alınamadı'")
+        } else {
+            val place = listOfNotNull(location.province, location.district, location.neighborhood)
+                .joinToString(" / ")
+                .ifEmpty { String.format(Locale.US, "%.5f, %.5f", location.latitude, location.longitude) }
+            note("Uçuş bildirimi: konum ok — $place")
+        }
+
+        val ok = withContext(Dispatchers.IO) {
             TelemetryApi.sendFccSession(
                 token = token,
                 action = action,
@@ -210,6 +250,14 @@ object TelemetryCollector {
                 failureReason = failureReason
             )
         }
+        note(
+            "Uçuş bildirimi: API $action success=$success " +
+                "serial=${serial ?: "null"} model=${deviceModel ?: "null"} " +
+                "ctrl=${controllerModel ?: "null"} " +
+                "lat=${location.latitude} lng=${location.longitude} " +
+                "http=${if (ok) "ok" else "fail"}"
+        )
+        return notes
     }
 
     suspend fun sendConnectionMetrics(
@@ -310,14 +358,33 @@ object TelemetryCollector {
         }
     }
 
-    private suspend fun resolveLocationInfo(context: Context): LocationInfo {
-        val coords = obtainCoordinates(context)
+    private suspend fun resolveLocationInfo(
+        context: Context,
+        note: (String) -> Unit = {}
+    ): LocationInfo {
+        val coords = obtainCoordinates(context, note)
         if (coords == null) {
+            note("Uçuş bildirimi: koordinat yok")
             return LocationInfo(null, null, null, null, null)
         }
 
+        note(
+            String.format(
+                Locale.US,
+                "Uçuş bildirimi: koordinat lat=%.6f lng=%.6f — reverse geocode...",
+                coords.first,
+                coords.second
+            )
+        )
         val address = withContext(Dispatchers.IO) {
             reverseGeocode(context, coords.first, coords.second)
+        }
+        if (address == null) {
+            note("Uçuş bildirimi: Geocoder adres üretemedi (koordinat yine de gönderilecek)")
+        } else {
+            note(
+                "Uçuş bildirimi: geocode il=${address.province} ilçe=${address.district} mahalle=${address.neighborhood}"
+            )
         }
         return LocationInfo(
             latitude = coords.first,
@@ -441,35 +508,76 @@ object TelemetryCollector {
         return if (age in 0 until FRESH_LOCATION_MAX_AGE_MS) coords else null
     }
 
-    private suspend fun obtainCoordinates(context: Context): Pair<Double, Double>? {
-        if (!hasLocationPermission(context)) return null
+    private suspend fun obtainCoordinates(
+        context: Context,
+        note: (String) -> Unit = {}
+    ): Pair<Double, Double>? {
+        if (!hasLocationPermission(context)) {
+            note("Uçuş bildirimi: konum izni YOK (FINE/COARSE)")
+            return null
+        }
+        note(
+            "Uçuş bildirimi: konum izni var fine=${hasFineLocationPermission(context)}"
+        )
 
-        readCachedCoords()?.let { return it }
+        readCachedCoords()?.let {
+            note("Uçuş bildirimi: bellek cache kullanıldı")
+            return it
+        }
 
         val last = readBestLastKnownLocation(context)
-        if (last != null && locationAgeMs(last) <= FRESH_LOCATION_MAX_AGE_MS) {
-            return rememberCoords(Pair(last.latitude, last.longitude))
+        if (last != null) {
+            val age = locationAgeMs(last)
+            note(
+                String.format(
+                    Locale.US,
+                    "Uçuş bildirimi: lastKnown provider=%s ageMs=%d acc=%.0fm",
+                    last.provider,
+                    age,
+                    last.accuracy
+                )
+            )
+            if (age <= FRESH_LOCATION_MAX_AGE_MS) {
+                note("Uçuş bildirimi: lastKnown taze kabul edildi")
+                return rememberCoords(Pair(last.latitude, last.longitude))
+            }
+        } else {
+            note("Uçuş bildirimi: lastKnown yok (GPS/Network/Passive)")
         }
 
-        val fresh = requestFreshLocation(context)
+        note("Uçuş bildirimi: taze GPS fix isteniyor (timeout=${LOCATION_FIX_TIMEOUT_MS}ms)...")
+        val fresh = requestFreshLocation(context, note)
         if (fresh != null) {
+            note("Uçuş bildirimi: taze fix alındı")
             return rememberCoords(fresh)
         }
+        note("Uçuş bildirimi: taze fix alınamadı")
 
         if (last != null && locationAgeMs(last) <= STALE_LOCATION_MAX_AGE_MS) {
+            note("Uçuş bildirimi: eski lastKnown fallback (≤6 saat)")
             return rememberCoords(Pair(last.latitude, last.longitude))
         }
 
-        return readCachedCoords()
-            ?: cachedCoords?.takeIf {
-                SystemClock.elapsedRealtime() - cachedCoordsAtMs <= STALE_LOCATION_MAX_AGE_MS
-            }
+        val staleCache = cachedCoords?.takeIf {
+            SystemClock.elapsedRealtime() - cachedCoordsAtMs <= STALE_LOCATION_MAX_AGE_MS
+        }
+        if (staleCache != null) {
+            note("Uçuş bildirimi: stale bellek cache fallback")
+            return staleCache
+        }
+
+        note("Uçuş bildirimi: tüm konum kaynakları boş")
+        return null
     }
 
-    private suspend fun requestFreshLocation(context: Context): Pair<Double, Double>? {
+    private suspend fun requestFreshLocation(
+        context: Context,
+        note: (String) -> Unit = {}
+    ): Pair<Double, Double>? {
         val lm = try {
             context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            note("Uçuş bildirimi: LocationManager alınamadı: ${e.message}")
             return null
         }
 
@@ -484,7 +592,16 @@ object TelemetryCollector {
                 add(LocationManager.PASSIVE_PROVIDER)
             }
         }
-        if (providers.isEmpty()) return null
+        note(
+            "Uçuş bildirimi: provider gps=${lm.isProviderEnabled(LocationManager.GPS_PROVIDER)} " +
+                "net=${lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)} " +
+                "passive=${lm.isProviderEnabled(LocationManager.PASSIVE_PROVIDER)} " +
+                "kullanılan=$providers"
+        )
+        if (providers.isEmpty()) {
+            note("Uçuş bildirimi: hiç konum provider açık değil")
+            return null
+        }
 
         return withTimeoutOrNull(LOCATION_FIX_TIMEOUT_MS) {
             suspendCancellableCoroutine { cont ->
@@ -532,9 +649,11 @@ object TelemetryCollector {
                     for (provider in providers) {
                         lm.requestLocationUpdates(provider, 0L, 0f, listener, looper)
                     }
-                } catch (_: SecurityException) {
+                } catch (e: SecurityException) {
+                    note("Uçuş bildirimi: SecurityException — ${e.message}")
                     finish(null)
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    note("Uçuş bildirimi: requestLocationUpdates hata — ${e.message}")
                     finish(null)
                 }
             }

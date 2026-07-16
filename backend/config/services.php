@@ -43,6 +43,8 @@ return [
         'flight_group_name' => env('EVOLUTION_FLIGHT_GROUP_NAME', 'ŞANLIURFA DRONE PİLOTLARI'),
         // Temporary override: when set, flight notices go to this number instead of the group
         'flight_notify_to' => env('EVOLUTION_FLIGHT_NOTIFY_TO'),
+        // Skip start notice only if previous enable/auto_fcc is within this many minutes (no disable in between)
+        'flight_reapply_cooldown_minutes' => (int) env('EVOLUTION_FLIGHT_REAPPLY_COOLDOWN_MINUTES', 15),
     ],
 
     'sms' => [
