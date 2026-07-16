@@ -166,7 +166,7 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                 if (detectedPort > 0) {
                     log("DUML portu algılandı: $detectedPort")
                 }
-                val serial = transport.probeSerial(1500)
+                val serial = getOrProbeSerial()
                 update {
                     copy(
                         status = "connected",
@@ -176,6 +176,7 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                     )
                 }
                 if (serial.isNotEmpty()) log("Uçak seri no: $serial")
+                else log("Uçak seri no alınamadı — cihaz satırında drone modeli eksik kalabilir")
 
                 // Apply FCC
                 delay(500)
@@ -961,10 +962,15 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
         var serial = _state.value.aircraftSerial
         if (serial.isEmpty()) {
             log("Uçak seri no sorgulanıyor...")
-            serial = transport.probeSerial(2000)
+            serial = transport.probeSerial(2500)
+            if (serial.isEmpty()) {
+                serial = transport.probeSerial(3000)
+            }
             if (serial.isNotEmpty()) {
                 update { copy(aircraftSerial = serial) }
                 log("Uçak seri no: $serial")
+            } else {
+                log("Uçak seri no alınamadı")
             }
         }
         return serial

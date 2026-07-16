@@ -26,8 +26,9 @@ import kotlin.coroutines.resume
 
 object TelemetryCollector {
 
-    private const val FRESH_LOCATION_MAX_AGE_MS = 10 * 60 * 1000L
-    private const val LOCATION_FIX_TIMEOUT_MS = 12_000L
+    private const val FRESH_LOCATION_MAX_AGE_MS = 30 * 60 * 1000L
+    private const val STALE_LOCATION_MAX_AGE_MS = 6 * 60 * 60 * 1000L
+    private const val LOCATION_FIX_TIMEOUT_MS = 20_000L
 
     private val pendingFeatureEvents = CopyOnWriteArrayList<FeatureEvent>()
     private val disconnectionCount = AtomicInteger(0)
@@ -36,6 +37,11 @@ object TelemetryCollector {
     private var fccStartTime: Long = 0L
     private var keepaliveCount = AtomicInteger(0)
     private var ceResetBlocks = AtomicInteger(0)
+
+    @Volatile
+    private var cachedCoords: Pair<Double, Double>? = null
+    @Volatile
+    private var cachedCoordsAtMs: Long = 0L
 
     data class LocationInfo(
         val latitude: Double?,
@@ -347,20 +353,54 @@ object TelemetryCollector {
         }
     }
 
+    /** Call early (permission grant / onResume) so flight start has a warm GPS cache. */
+    fun prefetchLocation(context: Context) {
+        if (!hasLocationPermission(context)) return
+        Thread {
+            try {
+                kotlinx.coroutines.runBlocking {
+                    obtainCoordinates(context.applicationContext)
+                }
+            } catch (_: Exception) {
+            }
+        }.start()
+    }
+
+    private fun rememberCoords(coords: Pair<Double, Double>): Pair<Double, Double> {
+        cachedCoords = coords
+        cachedCoordsAtMs = SystemClock.elapsedRealtime()
+        return coords
+    }
+
+    private fun readCachedCoords(): Pair<Double, Double>? {
+        val coords = cachedCoords ?: return null
+        val age = SystemClock.elapsedRealtime() - cachedCoordsAtMs
+        return if (age in 0 until FRESH_LOCATION_MAX_AGE_MS) coords else null
+    }
+
     private suspend fun obtainCoordinates(context: Context): Pair<Double, Double>? {
         if (!hasLocationPermission(context)) return null
 
+        readCachedCoords()?.let { return it }
+
         val last = readBestLastKnownLocation(context)
         if (last != null && locationAgeMs(last) <= FRESH_LOCATION_MAX_AGE_MS) {
-            return Pair(last.latitude, last.longitude)
+            return rememberCoords(Pair(last.latitude, last.longitude))
         }
 
         val fresh = requestFreshLocation(context)
         if (fresh != null) {
-            return fresh
+            return rememberCoords(fresh)
         }
 
-        return last?.let { Pair(it.latitude, it.longitude) }
+        if (last != null && locationAgeMs(last) <= STALE_LOCATION_MAX_AGE_MS) {
+            return rememberCoords(Pair(last.latitude, last.longitude))
+        }
+
+        return readCachedCoords()
+            ?: cachedCoords?.takeIf {
+                SystemClock.elapsedRealtime() - cachedCoordsAtMs <= STALE_LOCATION_MAX_AGE_MS
+            }
     }
 
     private suspend fun requestFreshLocation(context: Context): Pair<Double, Double>? {

@@ -228,7 +228,7 @@ class FlightGroupNotificationService
      */
     protected function deviceLabel(Member $member, FccSession $session, array $location): string
     {
-        $serial = filled($session->aircraft_serial) ? (string) $session->aircraft_serial : null;
+        $serial = $this->resolveAircraftSerial($member, $session);
         $droneModel = $this->resolveDroneModel($member, $session, $location, $serial);
 
         $parts = array_filter([
@@ -237,6 +237,32 @@ class FlightGroupNotificationService
         ]);
 
         return $parts !== [] ? implode(' · ', $parts) : 'Bilinmiyor';
+    }
+
+    protected function resolveAircraftSerial(Member $member, FccSession $session): ?string
+    {
+        if (filled($session->aircraft_serial)) {
+            return (string) $session->aircraft_serial;
+        }
+
+        $fromTelemetry = DeviceTelemetry::query()
+            ->where('member_id', $member->id)
+            ->whereNotNull('aircraft_serial')
+            ->latest()
+            ->value('aircraft_serial');
+
+        if (filled($fromTelemetry)) {
+            return (string) $fromTelemetry;
+        }
+
+        $fromSession = FccSession::query()
+            ->where('member_id', $member->id)
+            ->whereNotNull('aircraft_serial')
+            ->where('aircraft_serial', '!=', '')
+            ->latest('id')
+            ->value('aircraft_serial');
+
+        return filled($fromSession) ? (string) $fromSession : null;
     }
 
     /**
@@ -258,7 +284,7 @@ class FlightGroupNotificationService
             $bySerial = (clone $telemetryQuery)
                 ->where('aircraft_serial', $serial)
                 ->value('drone_model');
-            if (filled($bySerial)) {
+            if (filled($bySerial) && ! $this->looksLikeControllerModel((string) $bySerial)) {
                 return (string) $bySerial;
             }
         }
@@ -331,6 +357,18 @@ class FlightGroupNotificationService
 
             $lat = $telemetry?->latitude;
             $lng = $telemetry?->longitude;
+        }
+
+        if ($lat === null || $lng === null) {
+            $sessionLoc = FccSession::query()
+                ->where('member_id', $member->id)
+                ->whereNotNull('latitude')
+                ->whereNotNull('longitude')
+                ->latest('id')
+                ->first();
+
+            $lat = $sessionLoc?->latitude;
+            $lng = $sessionLoc?->longitude;
         }
 
         if ($lat !== null && $lng !== null) {

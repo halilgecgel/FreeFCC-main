@@ -97,7 +97,11 @@ class MainActivity : ComponentActivity() {
 
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { /* optional — telemetry uses device GPS when granted */ }
+    ) { grants ->
+        if (grants.values.any { it }) {
+            TelemetryCollector.prefetchLocation(this)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -132,6 +136,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.onAppResumed()
+        TelemetryCollector.prefetchLocation(this)
     }
 
     override fun onStop() {
@@ -158,10 +163,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestLocationPermission() {
-        val needFine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            != PackageManager.PERMISSION_GRANTED
-        val needCoarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
-            != PackageManager.PERMISSION_GRANTED
+        val needFine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) !=
+            PackageManager.PERMISSION_GRANTED
+        val needCoarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) !=
+            PackageManager.PERMISSION_GRANTED
         if (needFine || needCoarse) {
             locationPermissionLauncher.launch(
                 arrayOf(
@@ -169,6 +174,8 @@ class MainActivity : ComponentActivity() {
                     Manifest.permission.ACCESS_COARSE_LOCATION
                 )
             )
+        } else {
+            TelemetryCollector.prefetchLocation(this)
         }
     }
 }
