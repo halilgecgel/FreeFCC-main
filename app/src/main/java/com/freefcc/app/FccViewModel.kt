@@ -347,7 +347,7 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                     log("FCC modu etkinleştirildi — ${profile.frames.size} çerçeve gönderildi")
                     TelemetryCollector.markFccStart()
                     TelemetryCollector.trackFeature("fcc_enable", true)
-                    try { TelemetryCollector.sendFccSession(app, "fcc_enable", true, aircraftSerial = _state.value.aircraftSerial) } catch (_: Exception) {}
+                    try { TelemetryCollector.sendFccSession(app, "fcc_enable", true, aircraftSerial = getOrProbeSerial()) } catch (_: Exception) {}
                 } else {
                     update {
                         copy(
@@ -398,7 +398,7 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                     update { copy(status = "connected", message = "CE modu geri yüklendi", isFccEnabled = false, isBusy = false) }
                     log("CE modu geri yüklendi")
                     TelemetryCollector.trackFeature("fcc_disable", true)
-                    try { TelemetryCollector.sendFccSession(app, "fcc_disable", true, aircraftSerial = _state.value.aircraftSerial) } catch (_: Exception) {}
+                    try { TelemetryCollector.sendFccSession(app, "fcc_disable", true, aircraftSerial = getOrProbeSerial()) } catch (_: Exception) {}
                 } else {
                     update { copy(status = "connected", message = "CE geri yükleme başarısız — RC bağlantısı yok", isBusy = false) }
                     log("CE geri yükleme başarısız")

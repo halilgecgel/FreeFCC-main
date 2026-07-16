@@ -139,14 +139,9 @@ object TelemetryCollector {
     ) {
         val token = AuthManager.getToken(context) ?: return
         val controllerModel = try { Build.DEVICE } catch (_: Exception) { null }
-        val deviceModel = try {
-            listOfNotNull(Build.MANUFACTURER, Build.MODEL)
-                .joinToString(" ")
-                .trim()
-                .ifEmpty { null }
-        } catch (_: Exception) {
-            null
-        }
+        // device_model = bağlı drone; RC kumanda modeli (Build.MODEL) değil
+        val serial = aircraftSerial?.takeIf { it.isNotBlank() }
+        val deviceModel = serial?.let { inferDroneModel(it) }
         val location = resolveLocationInfo(context)
 
         withContext(Dispatchers.IO) {
@@ -157,7 +152,7 @@ object TelemetryCollector {
                 durationSeconds = if (action == "keepalive_stop" || action == "fcc_disable") getFccDurationSeconds() else null,
                 keepaliveCount = if (action == "keepalive_stop") getKeepaliveCount() else null,
                 ceResetBlocks = if (action == "keepalive_stop") getCeResetBlocks() else null,
-                aircraftSerial = aircraftSerial,
+                aircraftSerial = serial,
                 controllerModel = controllerModel,
                 deviceModel = deviceModel,
                 latitude = location.latitude,

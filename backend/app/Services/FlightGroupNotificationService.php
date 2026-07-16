@@ -171,7 +171,7 @@ class FlightGroupNotificationService
     protected function buildStartMessage(Member $member, FccSession $session, array $location): string
     {
         $pilot = $this->pilotLabel($member);
-        $device = $this->deviceLabel($session, $location);
+        $device = $this->deviceLabel($member, $session, $location);
         $place = $this->locationLabel($member, $location);
         $time = now()->timezone('Europe/Istanbul')->format('d.m.Y H:i');
 
@@ -193,7 +193,7 @@ class FlightGroupNotificationService
     protected function buildEndMessage(Member $member, FccSession $session, array $location): string
     {
         $pilot = $this->pilotLabel($member);
-        $device = $this->deviceLabel($session, $location);
+        $device = $this->deviceLabel($member, $session, $location);
         $place = $this->locationLabel($member, $location);
         $duration = $this->formatDuration((int) ($session->duration_seconds ?? 0));
         $time = now()->timezone('Europe/Istanbul')->format('d.m.Y H:i');
@@ -222,17 +222,85 @@ class FlightGroupNotificationService
     }
 
     /**
+     * Bağlı drone etiketi — RC kumanda modeli (Build.DEVICE / DJI RC 2) kullanılmaz.
+     *
      * @param  array{device_model?: string|null}  $location
      */
-    protected function deviceLabel(FccSession $session, array $location): string
+    protected function deviceLabel(Member $member, FccSession $session, array $location): string
     {
+        $serial = filled($session->aircraft_serial) ? (string) $session->aircraft_serial : null;
+        $droneModel = $this->resolveDroneModel($member, $session, $location, $serial);
+
         $parts = array_filter([
-            $location['device_model'] ?? null,
-            $session->controller_model,
-            $session->aircraft_serial ? 'SN: '.$session->aircraft_serial : null,
+            $droneModel,
+            $serial ? 'SN: '.$serial : null,
         ]);
 
-        return $parts !== [] ? implode(' · ', array_unique($parts)) : 'Bilinmiyor';
+        return $parts !== [] ? implode(' · ', $parts) : 'Bilinmiyor';
+    }
+
+    /**
+     * @param  array{device_model?: string|null}  $location
+     */
+    protected function resolveDroneModel(Member $member, FccSession $session, array $location, ?string $serial): ?string
+    {
+        $fromPayload = $location['device_model'] ?? $session->device_model;
+        if (filled($fromPayload) && ! $this->looksLikeControllerModel((string) $fromPayload)) {
+            return (string) $fromPayload;
+        }
+
+        $telemetryQuery = DeviceTelemetry::query()
+            ->where('member_id', $member->id)
+            ->whereNotNull('drone_model')
+            ->latest();
+
+        if ($serial !== null) {
+            $bySerial = (clone $telemetryQuery)
+                ->where('aircraft_serial', $serial)
+                ->value('drone_model');
+            if (filled($bySerial)) {
+                return (string) $bySerial;
+            }
+        }
+
+        $latest = $telemetryQuery->value('drone_model');
+        if (filled($latest) && ! $this->looksLikeControllerModel((string) $latest)) {
+            return (string) $latest;
+        }
+
+        if ($serial !== null) {
+            return $this->inferDroneModel($serial);
+        }
+
+        return null;
+    }
+
+    protected function looksLikeControllerModel(string $value): bool
+    {
+        $lower = mb_strtolower($value);
+
+        return str_contains($lower, 'dji rc')
+            || str_contains($lower, 'rc331')
+            || str_contains($lower, 'rc332')
+            || str_contains($lower, 'rc151')
+            || str_contains($lower, 'rc-n')
+            || preg_match('/^rc\\d/i', $value) === 1;
+    }
+
+    protected function inferDroneModel(string $serial): ?string
+    {
+        if (strlen($serial) < 4) {
+            return null;
+        }
+
+        return match (true) {
+            str_starts_with($serial, '1581F') => 'DJI Mini Series',
+            str_starts_with($serial, '1581U') => 'DJI Mavic Series',
+            str_starts_with($serial, '1581W') => 'DJI Air Series',
+            str_starts_with($serial, 'WA') => 'DJI Avata',
+            str_starts_with($serial, 'WM') => 'DJI Mavic',
+            default => null,
+        };
     }
 
     /**

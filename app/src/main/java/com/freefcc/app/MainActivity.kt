@@ -1415,7 +1415,7 @@ private fun FlightGroupNoticeDialog(
                 )
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "Cihaz modeli ve konum (il / ilçe / mahalle) bilgisi gruba iletilecektir. Uçuş bitince tamamlanma mesajı da gönderilir.",
+                    "Bağlı drone modeli ve konum (il / ilçe / mahalle) bilgisi gruba iletilecektir. Uçuş bitince tamamlanma mesajı da gönderilir.",
                     color = TextGray,
                     fontSize = 12.sp,
                     lineHeight = 18.sp
