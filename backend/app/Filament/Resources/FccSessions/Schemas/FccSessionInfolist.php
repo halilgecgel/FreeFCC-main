@@ -3,7 +3,6 @@
 namespace App\Filament\Resources\FccSessions\Schemas;
 
 use App\Models\FccSession;
-use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
@@ -22,18 +21,23 @@ class FccSessionInfolist
                         TextEntry::make('member.username')
                             ->label('Üye')
                             ->placeholder('—'),
-                        TextEntry::make('action')
-                            ->label('Bu Kayıt')
+                        TextEntry::make('flight_status')
+                            ->label('Durum')
                             ->badge()
-                            ->formatStateUsing(fn (string $state): string => FccSession::actionLabel($state))
+                            ->state(fn (FccSession $record) => $record->flightStatus())
+                            ->formatStateUsing(fn (string $state): string => FccSession::flightStatusLabel($state))
+                            ->color(fn (string $state): string => FccSession::flightStatusColor($state)),
+                        TextEntry::make('action')
+                            ->label('Başlatma')
+                            ->badge()
+                            ->formatStateUsing(fn (string $state): string => match ($state) {
+                                'auto_fcc' => 'Otomatik',
+                                default => 'Manuel',
+                            })
                             ->color(fn (string $state): string => match ($state) {
-                                'fcc_enable', 'auto_fcc' => 'success',
-                                'fcc_disable' => 'danger',
-                                default => 'gray',
+                                'auto_fcc' => 'info',
+                                default => 'success',
                             }),
-                        IconEntry::make('success')
-                            ->label('Başarılı')
-                            ->boolean(),
                         TextEntry::make('flight_started_at')
                             ->label('Uçuş Başlangıcı')
                             ->state(function (FccSession $record) {
@@ -58,16 +62,6 @@ class FccSessionInfolist
                         TextEntry::make('flight_duration')
                             ->label('Uçuş Süresi')
                             ->state(fn (FccSession $record) => FccSession::formatDuration($record->flightDurationSeconds())),
-                        TextEntry::make('duration_seconds')
-                            ->label('Kayıt Süresi')
-                            ->formatStateUsing(fn ($state) => FccSession::formatDuration($state ? (int) $state : null))
-                            ->placeholder('—'),
-                        TextEntry::make('keepalive_count')
-                            ->label('Keepalive')
-                            ->placeholder('0'),
-                        TextEntry::make('ce_reset_blocks')
-                            ->label('CE Engel')
-                            ->placeholder('0'),
                     ]),
 
                 Section::make('Cihaz & Konum')
@@ -99,16 +93,6 @@ class FccSessionInfolist
                             })
                             ->placeholder('—')
                             ->copyable(),
-                    ]),
-
-                Section::make('Hata Bilgisi')
-                    ->icon('heroicon-o-exclamation-triangle')
-                    ->visible(fn (FccSession $record) => filled($record->failure_reason) || ! $record->success)
-                    ->schema([
-                        TextEntry::make('failure_reason')
-                            ->label('Başarısızlık Nedeni')
-                            ->placeholder('—')
-                            ->columnSpanFull(),
                     ]),
 
                 Grid::make(4)

@@ -47,6 +47,19 @@ class FccSession extends Model
         return $this->belongsTo(Member::class);
     }
 
+    /** @var array{start: ?self, end: ?self}|null */
+    protected ?array $resolvedFlightBounds = null;
+
+    /**
+     * One row per logical flight: successful FCC enable / auto_fcc starts.
+     */
+    public function scopeFlightStarts(Builder $query): Builder
+    {
+        return $query
+            ->where('success', true)
+            ->whereIn('action', self::FLIGHT_START_ACTIONS);
+    }
+
     /**
      * Resolve the logical flight window that contains this session event.
      *
@@ -86,6 +99,93 @@ class FccSession extends Model
 
     public function resolveFlightStartEvent(): ?self
     {
+        return $this->flightBounds()['start'];
+    }
+
+    public function resolveFlightEndEvent(?self $startEvent = null): ?self
+    {
+        if ($startEvent !== null && $this->resolvedFlightBounds !== null) {
+            $cachedStart = $this->resolvedFlightBounds['start'];
+
+            if ($cachedStart !== null && $cachedStart->is($startEvent)) {
+                return $this->resolvedFlightBounds['end'];
+            }
+        }
+
+        if ($startEvent === null) {
+            return $this->flightBounds()['end'];
+        }
+
+        return $this->findFlightEndEvent($startEvent);
+    }
+
+    public function isOngoingFlight(?self $startEvent = null): bool
+    {
+        $startEvent ??= $this->resolveFlightStartEvent();
+
+        if ($startEvent === null) {
+            return false;
+        }
+
+        return $this->resolveFlightEndEvent($startEvent) === null;
+    }
+
+    /**
+     * @return 'ongoing'|'auto_closed'|'completed'
+     */
+    public function flightStatus(): string
+    {
+        if ($this->isOngoingFlight()) {
+            return 'ongoing';
+        }
+
+        $end = $this->resolveFlightEndEvent();
+
+        if ($end?->failure_reason === 'auto_closed_offline') {
+            return 'auto_closed';
+        }
+
+        return 'completed';
+    }
+
+    public static function flightStatusLabel(string $status): string
+    {
+        return match ($status) {
+            'ongoing' => 'Devam ediyor',
+            'auto_closed' => 'Otomatik kapandı',
+            default => 'Tamamlandı',
+        };
+    }
+
+    public static function flightStatusColor(string $status): string
+    {
+        return match ($status) {
+            'ongoing' => 'warning',
+            'auto_closed' => 'gray',
+            default => 'success',
+        };
+    }
+
+    /**
+     * @return array{start: ?self, end: ?self}
+     */
+    protected function flightBounds(): array
+    {
+        if ($this->resolvedFlightBounds !== null) {
+            return $this->resolvedFlightBounds;
+        }
+
+        $start = $this->findFlightStartEvent();
+        $end = $start ? $this->findFlightEndEvent($start) : null;
+
+        return $this->resolvedFlightBounds = [
+            'start' => $start,
+            'end' => $end,
+        ];
+    }
+
+    protected function findFlightStartEvent(): ?self
+    {
         if ($this->success && in_array($this->action, self::FLIGHT_START_ACTIONS, true)) {
             return $this;
         }
@@ -106,18 +206,12 @@ class FccSession extends Model
             ->first();
     }
 
-    public function resolveFlightEndEvent(?self $startEvent = null): ?self
+    protected function findFlightEndEvent(self $startEvent): ?self
     {
-        $startEvent ??= $this->resolveFlightStartEvent();
-
         if ($this->success && in_array($this->action, self::FLIGHT_END_ACTIONS, true)) {
-            if ($startEvent === null || ! $this->created_at->lt($startEvent->created_at)) {
+            if (! $this->created_at->lt($startEvent->created_at)) {
                 return $this;
             }
-        }
-
-        if ($startEvent === null) {
-            return null;
         }
 
         return static::query()
@@ -134,17 +228,6 @@ class FccSession extends Model
             ->orderBy('created_at')
             ->orderBy('id')
             ->first();
-    }
-
-    public function isOngoingFlight(?self $startEvent = null): bool
-    {
-        $startEvent ??= $this->resolveFlightStartEvent();
-
-        if ($startEvent === null) {
-            return false;
-        }
-
-        return $this->resolveFlightEndEvent($startEvent) === null;
     }
 
     public function flightDurationSeconds(): ?int

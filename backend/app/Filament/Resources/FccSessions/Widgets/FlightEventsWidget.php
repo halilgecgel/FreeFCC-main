@@ -19,7 +19,7 @@ class FlightEventsWidget extends TableWidget
     {
         return $table
             ->heading('Uçuş Boyunca FCC Olayları')
-            ->description('Enable / keepalive / disable dahil tüm oturum olayları')
+            ->description('Bu uçuşun başlangıç–bitiş aralığındaki tüm oturum olayları (enable, keepalive, disable)')
             ->query(fn (): Builder => $this->flightEventsQuery())
             ->columns([
                 TextColumn::make('created_at')

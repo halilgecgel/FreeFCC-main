@@ -6,50 +6,54 @@ use App\Filament\Resources\FccSessions\FccSessionResource;
 use App\Models\FccSession;
 use Filament\Actions\ViewAction;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class FccSessionsRelationManager extends RelationManager
 {
     protected static string $relationship = 'fccSessions';
 
-    protected static ?string $title = 'Aktivite Geçmişi';
+    protected static ?string $title = 'Uçuş Geçmişi';
 
     public function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn (Builder $query) => $query->flightStarts())
             ->recordUrl(fn (FccSession $record) => FccSessionResource::getUrl('view', ['record' => $record]))
             ->columns([
-                TextColumn::make('action')
-                    ->label('İşlem')
-                    ->badge()
-                    ->formatStateUsing(fn (string $state): string => FccSession::actionLabel($state))
-                    ->color(fn (string $state): string => match ($state) {
-                        'fcc_enable', 'auto_fcc' => 'success',
-                        'fcc_disable' => 'danger',
-                        default => 'gray',
-                    }),
-                IconColumn::make('success')
-                    ->label('Başarılı')
-                    ->boolean(),
-                TextColumn::make('duration_seconds')
+                TextColumn::make('created_at')
+                    ->label('Başlangıç')
+                    ->dateTime('d.m.Y H:i')
+                    ->sortable(),
+                TextColumn::make('flight_ended_at')
+                    ->label('Bitiş')
+                    ->state(function (FccSession $record) {
+                        if ($record->isOngoingFlight()) {
+                            return null;
+                        }
+
+                        return $record->resolveFlightEndEvent()?->created_at;
+                    })
+                    ->dateTime('d.m.Y H:i')
+                    ->placeholder('Devam ediyor'),
+                TextColumn::make('flight_duration')
                     ->label('Süre')
-                    ->formatStateUsing(fn ($state) => FccSession::formatDuration($state ? (int) $state : null)),
-                TextColumn::make('keepalive_count')
-                    ->label('Keepalive'),
-                TextColumn::make('aircraft_serial')
-                    ->label('Uçak S/N')
+                    ->state(fn (FccSession $record) => FccSession::formatDuration($record->flightDurationSeconds())),
+                TextColumn::make('flight_status')
+                    ->label('Durum')
+                    ->badge()
+                    ->state(fn (FccSession $record) => $record->flightStatus())
+                    ->formatStateUsing(fn (string $state): string => FccSession::flightStatusLabel($state))
+                    ->color(fn (string $state): string => FccSession::flightStatusColor($state)),
+                TextColumn::make('device_model')
+                    ->label('Cihaz / Drone')
                     ->placeholder('—')
                     ->toggleable(),
                 TextColumn::make('location')
                     ->label('Konum')
                     ->state(fn (FccSession $record) => $record->locationLabel())
                     ->toggleable(),
-                TextColumn::make('created_at')
-                    ->label('Tarih')
-                    ->dateTime('d.m.Y H:i')
-                    ->sortable(),
             ])
             ->recordActions([
                 ViewAction::make()
@@ -58,6 +62,6 @@ class FccSessionsRelationManager extends RelationManager
             ])
             ->defaultSort('created_at', 'desc')
             ->emptyStateHeading('Henüz uçuş yok')
-            ->emptyStateDescription('Üyenin FCC oturum / uçuş kayıtları burada listelenir. Satıra tıklayarak detayı açın.');
+            ->emptyStateDescription('Üyenin FCC etkinleştir → durdur aralıkları burada listelenir. Satıra tıklayarak olay detaylarını açın.');
     }
 }
