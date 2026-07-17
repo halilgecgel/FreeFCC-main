@@ -105,6 +105,11 @@ class Member extends Model
         return $this->hasMany(ConnectionMetric::class);
     }
 
+    public function notificationReceipts(): HasMany
+    {
+        return $this->hasMany(AppNotificationReceipt::class);
+    }
+
     public function markOnline(string $ip = null): void
     {
         $now = now();

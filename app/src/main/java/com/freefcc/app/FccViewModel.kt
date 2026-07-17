@@ -84,6 +84,9 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("freefcc", Context.MODE_PRIVATE)
     private var lastBusyProgressEmitMs = 0L
 
+    @Volatile
+    private var notificationPollingStarted = false
+
     init {
         // MainActivity.onCreate() calls init() below on every Activity re-creation
         // (e.g. config change), but this class init{} runs exactly once per
@@ -916,7 +919,10 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
     // --- Notifications ---
 
     fun startNotificationPolling() {
+        if (notificationPollingStarted) return
+        notificationPollingStarted = true
         runOnIO {
+            pollNotifications()
             while (true) {
                 delay(30_000)
                 pollNotifications()
@@ -926,25 +932,27 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private fun pollNotifications() {
         val token = AuthManager.getToken(app) ?: return
-        val lastSeenId = NotificationPoller.getLastSeenId(app)
-        val newNotifs = NotificationPoller.fetchNew(token, lastSeenId)
-        if (newNotifs.isNotEmpty()) {
-            update {
-                copy(
-                    pendingNotifications = pendingNotifications + newNotifs,
-                    showNotificationDialog = true,
-                    currentNotification = currentNotification ?: newNotifs.first()
-                )
-            }
-            val maxId = newNotifs.maxOf { it.id }
-            NotificationPoller.saveLastSeenId(app, maxId)
-            for (notif in newNotifs) {
-                NotificationHelper.showNotification(app, notif)
-            }
+        val newNotifs = NotificationPoller.fetchAndMarkDelivered(app, token)
+        if (newNotifs.isEmpty()) return
+
+        update {
+            val existingIds = pendingNotifications.map { it.id }.toSet()
+            val unique = newNotifs.filter { it.id !in existingIds }
+            if (unique.isEmpty()) return@update this
+            val merged = pendingNotifications + unique
+            copy(
+                pendingNotifications = merged,
+                showNotificationDialog = true,
+                currentNotification = currentNotification ?: merged.first()
+            )
+        }
+        for (notif in newNotifs) {
+            NotificationHelper.showNotification(app, notif)
         }
     }
 
     fun dismissNotification() {
+        val current = _state.value.currentNotification
         val remaining = _state.value.pendingNotifications.drop(1)
         update {
             copy(
@@ -953,15 +961,28 @@ class FccViewModel(private val app: Application) : AndroidViewModel(app) {
                 currentNotification = remaining.firstOrNull()
             )
         }
+        if (current != null) {
+            runOnIO {
+                val token = AuthManager.getToken(app) ?: return@runOnIO
+                NotificationPoller.ackRead(token, listOf(current.id))
+            }
+        }
     }
 
     fun dismissAllNotifications() {
+        val ids = _state.value.pendingNotifications.map { it.id }
         update {
             copy(
                 pendingNotifications = emptyList(),
                 showNotificationDialog = false,
                 currentNotification = null
             )
+        }
+        if (ids.isNotEmpty()) {
+            runOnIO {
+                val token = AuthManager.getToken(app) ?: return@runOnIO
+                NotificationPoller.ackRead(token, ids)
+            }
         }
     }
 

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class AppNotification extends Model
 {
@@ -18,5 +19,10 @@ class AppNotification extends Model
         return [
             'is_active' => 'boolean',
         ];
+    }
+
+    public function receipts(): HasMany
+    {
+        return $this->hasMany(AppNotificationReceipt::class);
     }
 }

@@ -1,6 +1,7 @@
 package com.freefcc.app
 
 import android.content.Context
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -16,6 +17,7 @@ data class AppNotification(
 object NotificationPoller {
 
     private const val PREF_KEY = "last_seen_notification_id"
+    private val pollLock = Any()
 
     fun getLastSeenId(context: Context): Long {
         return context.getSharedPreferences("freefcc", Context.MODE_PRIVATE)
@@ -28,8 +30,27 @@ object NotificationPoller {
     }
 
     /**
+     * Atomically fetches undelivered notifications and marks them delivered on the server.
+     * Prevents ViewModel + Worker race from showing the same notification twice.
+     * If the ack fails, returns empty so the next poll can retry without duplicates.
+     */
+    fun fetchAndMarkDelivered(context: Context, token: String): List<AppNotification> {
+        synchronized(pollLock) {
+            val afterId = getLastSeenId(context)
+            val newNotifs = fetchNew(token, afterId)
+            if (newNotifs.isEmpty()) return emptyList()
+
+            val ids = newNotifs.map { it.id }
+            if (!ackDelivered(token, ids)) return emptyList()
+
+            saveLastSeenId(context, ids.maxOrNull() ?: afterId)
+            return newNotifs
+        }
+    }
+
+    /**
      * Fetches new notifications from the server since the given ID.
-     * Requires a valid auth token.
+     * Server also excludes already-delivered receipts for this member.
      */
     fun fetchNew(token: String, afterId: Long): List<AppNotification> {
         var conn: HttpURLConnection? = null
@@ -66,6 +87,38 @@ object NotificationPoller {
             result
         } catch (_: Exception) {
             emptyList()
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    fun ackDelivered(token: String, ids: List<Long>): Boolean {
+        return postIds("${AuthApi.BASE_URL}/notifications/delivered", token, ids)
+    }
+
+    fun ackRead(token: String, ids: List<Long>): Boolean {
+        return postIds("${AuthApi.BASE_URL}/notifications/read", token, ids)
+    }
+
+    private fun postIds(url: String, token: String, ids: List<Long>): Boolean {
+        if (ids.isEmpty()) return true
+        var conn: HttpURLConnection? = null
+        return try {
+            val body = JSONObject().put("ids", JSONArray(ids)).toString()
+            conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                doOutput = true
+                connectTimeout = 8000
+                readTimeout = 8000
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("User-Agent", "FreeFCC-App")
+                setRequestProperty("Authorization", "Bearer $token")
+            }
+            conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            conn.responseCode in 200..299
+        } catch (_: Exception) {
+            false
         } finally {
             conn?.disconnect()
         }

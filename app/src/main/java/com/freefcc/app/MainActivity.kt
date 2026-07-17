@@ -58,6 +58,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -1189,6 +1190,12 @@ private fun FccPage(state: AppState, viewModel: FccViewModel) {
                         FlightGroupNoticeDialog(
                             onConfirm = {
                                 showFlightGroupDialog = false
+                                try {
+                                    MediaPlayer.create(context, R.raw.fcc_aktif_ses)?.apply {
+                                        setOnCompletionListener { it.release() }
+                                        start()
+                                    }
+                                } catch (_: Exception) {}
                                 viewModel.enableFcc()
                             },
                             onDismiss = { showFlightGroupDialog = false }
@@ -1996,7 +2003,8 @@ private fun UpdatePage(state: AppState, viewModel: FccViewModel) {
 
 @Composable
 private fun SupportPage() {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
 
     val textAlpha = remember { Animatable(0f) }
     val textScale = remember { Animatable(0.5f) }
@@ -2005,13 +2013,17 @@ private fun SupportPage() {
     LaunchedEffect(videoFinished) {
         if (videoFinished) {
             textAlpha.animateTo(1f, tween(600))
-        }
-    }
-    LaunchedEffect(videoFinished) {
-        if (videoFinished) {
             textScale.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
         }
     }
+
+    // Dikey video (9:16): yatay kumandada yüksekliğe göre küçült, ekrana sığdır
+    val videoHeightDp = if (isLandscape) {
+        (configuration.screenHeightDp - 100).coerceIn(160, 320).dp
+    } else {
+        (configuration.screenHeightDp * 0.50f).toInt().coerceIn(220, 420).dp
+    }
+    val videoWidthDp = videoHeightDp * (9f / 16f)
 
     Column(
         modifier = Modifier
@@ -2021,42 +2033,34 @@ private fun SupportPage() {
             .padding(bottom = BottomNavHeight + 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(Modifier.height(56.dp))
+        Spacer(Modifier.height(if (isLandscape) 24.dp else 56.dp))
         PageTitle("Destek", Icons.Outlined.FavoriteBorder)
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(if (isLandscape) 12.dp else 24.dp))
 
-        // Video player (portrait source: 9:16)
-        Surface(
-            color = Color.Black,
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, CardBorder),
-            modifier = Modifier
-                .fillMaxWidth(0.72f)
-                .aspectRatio(9f / 16f)
-        ) {
-            AndroidView(
-                factory = { ctx ->
-                    VideoView(ctx).apply {
-                        val videoUri = Uri.parse("android.resource://${ctx.packageName}/${R.raw.on_lira}")
-                        setOnErrorListener { _, _, _ ->
-                            videoFinished = true
-                            true
-                        }
-                        setOnCompletionListener { videoFinished = true }
-                        setOnPreparedListener { mp ->
-                            mp.isLooping = false
-                            start()
-                        }
-                        setVideoURI(videoUri)
-                    }
-                },
-                modifier = Modifier.fillMaxSize()
+        SupportVideoPlayer(
+            width = videoWidthDp,
+            height = videoHeightDp,
+            onFinished = { videoFinished = true }
+        )
+
+        if (!videoFinished) {
+            Spacer(Modifier.height(16.dp))
+            val dotAnim = rememberInfiniteTransition(label = "dots")
+            val dotAlpha by dotAnim.animateFloat(
+                0.3f, 1f,
+                infiniteRepeatable(tween(600), RepeatMode.Reverse),
+                label = "dotAlpha"
+            )
+            Text(
+                "Videoyu izle...",
+                color = TextGray.copy(alpha = dotAlpha),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
             )
         }
 
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(if (isLandscape) 16.dp else 32.dp))
 
-        // Text that appears after video
         AnimatedVisibility(
             visible = videoFinished,
             enter = fadeIn(tween(500)) + expandVertically(tween(500))
@@ -2065,7 +2069,7 @@ private fun SupportPage() {
                 Text(
                     "Destek mestek yok babo",
                     color = Pink,
-                    fontSize = 26.sp,
+                    fontSize = if (isLandscape) 22.sp else 26.sp,
                     fontWeight = FontWeight.Black,
                     textAlign = TextAlign.Center,
                     letterSpacing = 1.sp,
@@ -2077,13 +2081,13 @@ private fun SupportPage() {
                 Text(
                     "Duan yeter :D",
                     color = Green,
-                    fontSize = 22.sp,
+                    fontSize = if (isLandscape) 18.sp else 22.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.alpha(textAlpha.value)
                 )
 
-                Spacer(Modifier.height(40.dp))
+                Spacer(Modifier.height(if (isLandscape) 24.dp else 40.dp))
 
                 GlowCard {
                     Text("Hakkında", color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -2108,23 +2112,46 @@ private fun SupportPage() {
                 }
             }
         }
+    }
+}
 
-        // Show a hint while video is playing
-        if (!videoFinished) {
-            Spacer(Modifier.height(20.dp))
-            val dotAnim = rememberInfiniteTransition(label = "dots")
-            val dotAlpha by dotAnim.animateFloat(
-                0.3f, 1f,
-                infiniteRepeatable(tween(600), RepeatMode.Reverse),
-                label = "dotAlpha"
-            )
-            Text(
-                "Videoyu izle...",
-                color = TextGray.copy(alpha = dotAlpha),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
-            )
-        }
+@Composable
+private fun SupportVideoPlayer(
+    width: androidx.compose.ui.unit.Dp,
+    height: androidx.compose.ui.unit.Dp,
+    onFinished: () -> Unit
+) {
+    Surface(
+        color = Color.Black,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, CardBorder),
+        modifier = Modifier.size(width = width, height = height)
+    ) {
+        AndroidView(
+            factory = { ctx ->
+                VideoView(ctx).apply {
+                    setOnErrorListener { _, _, _ ->
+                        onFinished()
+                        true
+                    }
+                    setOnCompletionListener { onFinished() }
+                    setOnPreparedListener { mp ->
+                        mp.isLooping = false
+                        mp.setVolume(1f, 1f)
+                        post { start() }
+                    }
+                    val videoFile = File(ctx.cacheDir, "on_lira.mp4")
+                    if (!videoFile.exists() || videoFile.length() == 0L) {
+                        ctx.resources.openRawResource(R.raw.on_lira).use { input ->
+                            videoFile.outputStream().use { output -> input.copyTo(output) }
+                        }
+                    }
+                    setVideoPath(videoFile.absolutePath)
+                }
+            },
+            onRelease = { it.stopPlayback() },
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
 

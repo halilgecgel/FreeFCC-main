@@ -21,6 +21,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::post('/me/password', [AuthController::class, 'changePassword']);
         Route::get('/notifications', [NotificationController::class, 'index']);
+        Route::post('/notifications/delivered', [NotificationController::class, 'delivered']);
+        Route::post('/notifications/read', [NotificationController::class, 'read']);
 
         Route::get('/device-models', [DeviceModelController::class, 'index']);
         Route::post('/me/device-model', [DeviceModelController::class, 'select']);

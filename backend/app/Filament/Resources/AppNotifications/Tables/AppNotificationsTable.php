@@ -5,9 +5,11 @@ namespace App\Filament\Resources\AppNotifications\Tables;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class AppNotificationsTable
 {
@@ -15,6 +17,10 @@ class AppNotificationsTable
     {
         return $table
             ->defaultSort('id', 'desc')
+            ->modifyQueryUsing(fn (Builder $query) => $query->withCount([
+                'receipts as delivered_count' => fn (Builder $q) => $q->whereNotNull('delivered_at'),
+                'receipts as read_count' => fn (Builder $q) => $q->whereNotNull('read_at'),
+            ]))
             ->columns([
                 TextColumn::make('id')
                     ->label('#')
@@ -40,6 +46,12 @@ class AppNotificationsTable
                         'promo' => 'Duyuru',
                         default => $state,
                     }),
+                TextColumn::make('delivered_count')
+                    ->label('Ulaşan')
+                    ->sortable(),
+                TextColumn::make('read_count')
+                    ->label('Okuyan')
+                    ->sortable(),
                 IconColumn::make('is_active')
                     ->label('Aktif')
                     ->boolean(),
@@ -49,6 +61,7 @@ class AppNotificationsTable
                     ->sortable(),
             ])
             ->recordActions([
+                ViewAction::make()->label('Detay'),
                 EditAction::make(),
             ])
             ->toolbarActions([

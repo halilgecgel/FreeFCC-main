@@ -5,7 +5,10 @@ namespace App\Filament\Resources\AppNotifications;
 use App\Filament\Resources\AppNotifications\Pages\CreateAppNotification;
 use App\Filament\Resources\AppNotifications\Pages\EditAppNotification;
 use App\Filament\Resources\AppNotifications\Pages\ListAppNotifications;
+use App\Filament\Resources\AppNotifications\Pages\ViewAppNotification;
+use App\Filament\Resources\AppNotifications\RelationManagers\ReceiptsRelationManager;
 use App\Filament\Resources\AppNotifications\Schemas\AppNotificationForm;
+use App\Filament\Resources\AppNotifications\Schemas\AppNotificationInfolist;
 use App\Filament\Resources\AppNotifications\Tables\AppNotificationsTable;
 use App\Models\AppNotification;
 use BackedEnum;
@@ -36,9 +39,21 @@ class AppNotificationResource extends Resource
         return AppNotificationForm::configure($schema);
     }
 
+    public static function infolist(Schema $schema): Schema
+    {
+        return AppNotificationInfolist::configure($schema);
+    }
+
     public static function table(Table $table): Table
     {
         return AppNotificationsTable::configure($table);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            ReceiptsRelationManager::class,
+        ];
     }
 
     public static function getPages(): array
@@ -46,6 +61,7 @@ class AppNotificationResource extends Resource
         return [
             'index' => ListAppNotifications::route('/'),
             'create' => CreateAppNotification::route('/create'),
+            'view' => ViewAppNotification::route('/{record}'),
             'edit' => EditAppNotification::route('/{record}/edit'),
         ];
     }

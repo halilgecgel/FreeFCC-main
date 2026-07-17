@@ -15,15 +15,10 @@ class NotificationWorker(
 
     override suspend fun doWork(): Result {
         val token = AuthManager.getToken(appContext) ?: return Result.success()
-        val lastSeenId = NotificationPoller.getLastSeenId(appContext)
-        val newNotifs = NotificationPoller.fetchNew(token, lastSeenId)
+        val newNotifs = NotificationPoller.fetchAndMarkDelivered(appContext, token)
 
-        if (newNotifs.isNotEmpty()) {
-            for (notif in newNotifs) {
-                NotificationHelper.showNotification(appContext, notif)
-            }
-            val maxId = newNotifs.maxOf { it.id }
-            NotificationPoller.saveLastSeenId(appContext, maxId)
+        for (notif in newNotifs) {
+            NotificationHelper.showNotification(appContext, notif)
         }
 
         return Result.success()
