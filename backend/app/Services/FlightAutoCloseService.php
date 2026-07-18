@@ -61,6 +61,41 @@ class FlightAutoCloseService
         return $session;
     }
 
+    /**
+     * Close open flights for members who are not currently online.
+     * Cleans up stuck "Devam ediyor" rows when is_online was already false.
+     */
+    public function closeOrphanedOpenFlights(): int
+    {
+        $timeout = now()->subMinutes(Member::HEARTBEAT_TIMEOUT_MINUTES);
+
+        $members = Member::query()
+            ->where(function ($query) use ($timeout) {
+                $query->where('is_online', false)
+                    ->orWhereNull('last_heartbeat_at')
+                    ->orWhere('last_heartbeat_at', '<', $timeout);
+            })
+            ->whereHas('fccSessions', function ($query) {
+                $query->where('success', true)
+                    ->whereIn('action', FccSession::FLIGHT_START_ACTIONS);
+            })
+            ->get();
+
+        $closed = 0;
+
+        foreach ($members as $member) {
+            if ($member->isCurrentlyOnline()) {
+                continue;
+            }
+
+            if ($this->closeOpenFlightIfNeeded($member) !== null) {
+                $closed++;
+            }
+        }
+
+        return $closed;
+    }
+
     protected function resolveOpenFlightStart(Member $member): ?FccSession
     {
         $last = FccSession::query()

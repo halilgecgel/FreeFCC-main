@@ -131,31 +131,30 @@ class Member extends Model
 
     public function markOffline(): void
     {
-        if (! $this->is_online) {
-            return;
+        if ($this->is_online) {
+            $lastLog = $this->activityLogs()
+                ->where('event', 'online')
+                ->whereNull('ended_at')
+                ->latest()
+                ->first();
+
+            $duration = 0;
+            if ($lastLog) {
+                $duration = (int) $lastLog->started_at->diffInSeconds(now());
+                $lastLog->update([
+                    'ended_at' => now(),
+                    'duration_seconds' => $duration,
+                ]);
+            }
+
+            $this->forceFill([
+                'is_online' => false,
+                'total_online_seconds' => $this->total_online_seconds + $duration,
+            ])->save();
         }
 
-        $lastLog = $this->activityLogs()
-            ->where('event', 'online')
-            ->whereNull('ended_at')
-            ->latest()
-            ->first();
-
-        $duration = 0;
-        if ($lastLog) {
-            $duration = (int) $lastLog->started_at->diffInSeconds(now());
-            $lastLog->update([
-                'ended_at' => now(),
-                'duration_seconds' => $duration,
-            ]);
-        }
-
-        $this->forceFill([
-            'is_online' => false,
-            'total_online_seconds' => $this->total_online_seconds + $duration,
-        ])->save();
-
-        // RC power-off / lost heartbeat: close open flight so the WhatsApp group gets an end notice.
+        // Always attempt close: is_online may already be false while a flight is still open
+        // (e.g. flag flipped earlier, or auto-close added after the member went offline).
         app(FlightAutoCloseService::class)->closeOpenFlightIfNeeded($this);
     }
 

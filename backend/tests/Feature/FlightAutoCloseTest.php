@@ -111,6 +111,86 @@ class FlightAutoCloseTest extends TestCase
             ->count());
     }
 
+    public function test_mark_offline_closes_open_flight_even_when_already_offline(): void
+    {
+        $member = Member::create([
+            'username' => 'pilot_already_off',
+            'password' => 'secret123',
+            'is_active' => true,
+            'name' => 'Already Offline',
+        ]);
+        $member->forceFill([
+            'is_online' => false,
+            'last_heartbeat_at' => now()->subHours(5),
+        ])->save();
+
+        FccSession::create([
+            'member_id' => $member->id,
+            'action' => 'fcc_enable',
+            'success' => true,
+            'device_model' => 'DJI Mini 4 Pro',
+        ]);
+
+        $notifier = Mockery::mock(FlightGroupNotificationService::class);
+        $notifier->shouldReceive('notifySession')->once();
+        $this->app->instance(FlightGroupNotificationService::class, $notifier);
+
+        $member->markOffline();
+
+        $this->assertDatabaseHas('fcc_sessions', [
+            'member_id' => $member->id,
+            'action' => 'fcc_disable',
+            'success' => 1,
+            'failure_reason' => FlightAutoCloseService::REASON_AUTO_CLOSED_OFFLINE,
+        ]);
+    }
+
+    public function test_check_offline_closes_orphaned_open_flights_for_already_offline_members(): void
+    {
+        $member = Member::create([
+            'username' => 'pilot_orphan',
+            'password' => 'secret123',
+            'is_active' => true,
+            'name' => 'Orphan Flight',
+        ]);
+        // Already offline — previous bug skipped these entirely.
+        $member->forceFill([
+            'is_online' => false,
+            'last_heartbeat_at' => now()->subHours(20),
+        ])->save();
+
+        $start = FccSession::create([
+            'member_id' => $member->id,
+            'action' => 'fcc_enable',
+            'success' => true,
+            'aircraft_serial' => '1581FTESTSERIAL',
+            'device_model' => 'DJI Mini 4 Pro',
+        ]);
+        $start->forceFill([
+            'created_at' => now()->subHours(19),
+            'updated_at' => now()->subHours(19),
+        ])->save();
+
+        $notifier = Mockery::mock(FlightGroupNotificationService::class);
+        $notifier->shouldReceive('notifySession')->once();
+        $this->app->instance(FlightGroupNotificationService::class, $notifier);
+
+        $this->artisan('members:check-offline')
+            ->assertSuccessful()
+            ->expectsOutput('1 açık uçuş otomatik kapatıldı.');
+
+        $this->assertDatabaseHas('fcc_sessions', [
+            'member_id' => $member->id,
+            'action' => 'fcc_disable',
+            'success' => 1,
+            'failure_reason' => FlightAutoCloseService::REASON_AUTO_CLOSED_OFFLINE,
+        ]);
+
+        $start->refresh();
+        $this->assertFalse($start->isOngoingFlight());
+        $this->assertSame('auto_closed', $start->flightStatus());
+    }
+
     public function test_auto_close_end_message_mentions_connection_loss(): void
     {
         config([
